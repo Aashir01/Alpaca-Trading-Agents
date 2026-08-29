@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 

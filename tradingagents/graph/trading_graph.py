@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import json
 from datetime import date, datetime, timedelta
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, List, Optional
 
 import yfinance as yf
 from langgraph.prebuilt import ToolNode
@@ -14,11 +14,6 @@ from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.utils.memory import FinancialSituationMemory, TradingMemoryLog
 from tradingagents.agents.schemas import trade_intent_action
-from tradingagents.agents.utils.agent_states import (
-    AgentState,
-    InvestDebateState,
-    RiskDebateState,
-)
 from tradingagents.openai_model_registry import normalize_model_params, describe_model_params
 from tradingagents.run_logger import get_run_audit_logger
 from tradingagents.dataflows.config import (

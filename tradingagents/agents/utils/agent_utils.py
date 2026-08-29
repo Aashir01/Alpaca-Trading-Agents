@@ -1,20 +1,12 @@
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage
-from typing import List
 from typing import Annotated
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import RemoveMessage
 from langchain_core.tools import tool
-from datetime import date, timedelta, datetime
-import functools
-import pandas as pd
+from datetime import datetime
 import os
-from dateutil.relativedelta import relativedelta
-from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.run_logger import get_run_audit_logger
 from tradingagents.dataflows.config import get_api_key
-import json
 import time
 from functools import wraps
 
@@ -1349,7 +1341,6 @@ class Toolkit:
         
         # Get indicator data for each indicator across the time window
         import pandas as pd
-        from datetime import datetime, timedelta
         
         # Calculate date range
         curr_dt = pd.to_datetime(curr_date)

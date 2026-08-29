@@ -783,7 +783,6 @@ def register_control_callbacks(app):
             return "", {}, 1, 1, 1, 1
 
         # Always use current/real-time data for analysis
-        from datetime import datetime
 
         # Determine action based on current state
         is_stop_action = app_state.analysis_running or app_state.loop_enabled or app_state.market_hour_enabled

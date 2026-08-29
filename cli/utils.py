@@ -1,5 +1,5 @@
 import questionary
-from typing import List, Optional, Tuple, Dict
+from typing import List
 from rich import console
 from cli.models import AnalystType
 from tradingagents.openai_model_registry import (

@@ -9,7 +9,7 @@ serialized brief stays well under 2 000 tokens.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 

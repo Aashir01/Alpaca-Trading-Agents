@@ -33,6 +33,7 @@ def evaluate_strategy(
     chain: Mapping[str, Mapping[str, Any]],
     max_loss_pct: float = 2.0,
     max_spread_pct: float = 20.0,
+    stress_move_pct: float = 20.0,
 ) -> RiskGateResult:
     """Veto or approve an options strategy.
 
@@ -41,8 +42,13 @@ def evaluate_strategy(
         qty: number of spread units (contracts) to be traded.
         account: account snapshot with ``equity``, ``buying_power`` and ``positions``.
         chain: map from leg symbol to a quote dict with ``bid`` and ``ask``.
-        max_loss_pct: maximum allowed defined loss as a percent of account equity.
+        max_loss_pct: maximum allowed loss as a percent of account equity.
         max_spread_pct: maximum allowed bid-ask spread as a percent of mid price.
+        stress_move_pct: adverse move, as a percent below the short strike, used
+            to size collateralized shorts. A cash-secured put's true worst case
+            is the stock going to zero, which is honest but useless as a sizing
+            rule, so the equity limit is applied to this stressed loss while the
+            to-zero figure is still reported.
 
     Returns:
         ``RiskGateResult`` with ``approved`` flag and a list of veto reasons.
@@ -103,7 +109,9 @@ def evaluate_strategy(
     per_unit_premium = per_share_premium * 100.0  # one contract = 100 shares
 
     # Strategy-specific defined-risk checks.
-    max_loss, collateral = _compute_risk_metrics(proposal, per_unit_premium, account)
+    max_loss, collateral, stress_loss = _compute_risk_metrics(
+        proposal, per_unit_premium, account, stress_move_pct
+    )
 
     if proposal.strategy in {OptionsStrategy.CASH_SECURED_PUT, OptionsStrategy.COVERED_CALL}:
         if collateral is None:
@@ -129,14 +137,17 @@ def evaluate_strategy(
     if per_unit_premium > 0 and per_unit_premium * qty > buying_power:
         reasons.append(f"Net debit ${per_unit_premium * qty:,.2f} exceeds buying power.")
 
-    # Max defined loss.
-    if max_loss is None:
+    # Max loss. For defined-risk spreads the stressed loss equals the max loss,
+    # so this is the plain 2%-of-equity rule. For collateralized shorts it is
+    # the loss at an adverse move, because the to-zero figure would veto every
+    # cash-secured put ever written.
+    if max_loss is None or stress_loss is None:
         reasons.append("Unable to compute defined loss for the proposed strategy.")
     else:
         max_allowed_loss = equity * (max_loss_pct / 100.0)
-        if max_loss * qty > max_allowed_loss:
+        if stress_loss * qty > max_allowed_loss:
             reasons.append(
-                f"Defined loss ${max_loss * qty:,.2f} exceeds {max_loss_pct}% of equity (${max_allowed_loss:,.2f})."
+                f"Risk-sized loss ${stress_loss * qty:,.2f} exceeds {max_loss_pct}% of equity (${max_allowed_loss:,.2f})."
             )
 
     # No undefined-risk legs: every short leg must be paired with a long leg of
@@ -169,6 +180,7 @@ def evaluate_strategy(
         approved=len(reasons) == 0,
         reasons=reasons,
         max_loss_usd=max_loss * qty if max_loss is not None else None,
+        stress_loss_usd=stress_loss * qty if stress_loss is not None else None,
         net_credit_debit=per_unit_premium,
         collateral_required=collateral * qty if collateral is not None else None,
     )
@@ -178,34 +190,48 @@ def _compute_risk_metrics(
     proposal: OptionsStrategyProposal,
     per_unit_premium: float,
     account: Mapping[str, Any],
-) -> tuple[Optional[float], Optional[float]]:
-    """Return (max_loss_per_unit, collateral_per_unit) for a strategy.
+    stress_move_pct: float = 20.0,
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    """Return (max_loss_per_unit, collateral_per_unit, stress_loss_per_unit).
 
     ``per_unit_premium`` is the net premium per spread unit computed from the
     current bid/ask mid; positive for debit, negative for credit.
+
+    ``max_loss`` is the honest worst case, including the to-zero case for a
+    cash-secured put. ``stress_loss`` is what the equity-percentage rule is
+    applied to; for every defined-risk structure the two are identical, and
+    they only diverge for collateralized shorts.
     """
     strategy = proposal.strategy
     legs = proposal.legs
-    equity = float(account.get("equity") or 0.0)
     per_share_premium = per_unit_premium / 100.0
+    # Credit received per share (0 for a net debit).
+    credit_per_share = max(0.0, -per_share_premium)
+
+    def defined(loss: float) -> tuple[float, None, float]:
+        """A defined-risk structure: worst case and sizing loss are the same."""
+        return loss, None, loss
 
     if strategy in (OptionsStrategy.LONG_CALL, OptionsStrategy.LONG_PUT):
-        return per_unit_premium, None
+        # Long premium: the debit paid is the whole risk.
+        return defined(max(0.0, per_unit_premium))
 
     if strategy == OptionsStrategy.CASH_SECURED_PUT:
         put_strikes = [leg.strike for leg in legs if leg.strike is not None]
         if not put_strikes:
-            return None, None
+            return None, None, None
         strike = max(put_strikes)
-        # Collateral is strike * 100 per spread. The position is cash-collateralized,
-        # so we treat the gate rule as a collateral check rather than a theoretical
-        # bankruptcy-to-zero loss. max_loss is reported as 0 for the 2% rule.
-        return 0.0, strike * 100.0
+        # Worst case is assignment with the stock at zero, less the credit kept.
+        max_loss = max(0.0, strike - credit_per_share) * 100.0
+        # Sizing case: assigned with the stock stress_move_pct below the strike.
+        stress_loss = max(0.0, strike * (stress_move_pct / 100.0) - credit_per_share) * 100.0
+        return max_loss, strike * 100.0, stress_loss
 
     if strategy == OptionsStrategy.COVERED_CALL:
-        # The long stock covers the short call. The real risk gate is share ownership
-        # (enforced separately); report zero theoretical max loss for the 2% rule.
-        return 0.0, None
+        # The short call caps upside on shares already owned; it adds no new
+        # downside. Share ownership is enforced separately, so the incremental
+        # risk of the options leg really is zero.
+        return 0.0, None, 0.0
 
     # Spreads: collect put/call legs with strikes.
     put_strikes = sorted(
@@ -215,28 +241,36 @@ def _compute_risk_metrics(
         leg.strike for leg in legs if leg.option_type == "call" and leg.strike is not None
     )
 
+    if strategy in (OptionsStrategy.BULL_CALL_SPREAD, OptionsStrategy.BEAR_PUT_SPREAD):
+        # Debit verticals: risk is the net debit paid.
+        strikes = call_strikes if strategy == OptionsStrategy.BULL_CALL_SPREAD else put_strikes
+        if len(strikes) < 2:
+            return None, None, None
+        return defined(max(0.0, per_unit_premium))
+
     if strategy == OptionsStrategy.BULL_PUT_SPREAD:
         if len(put_strikes) < 2:
-            return None, None
+            return None, None, None
         width = abs(put_strikes[-1] - put_strikes[0])
         # Credit spread: max loss per contract = (width - net_credit_per_share) * 100
-        return max(0.0, (width - max(0.0, -per_share_premium))) * 100.0, None
+        return defined(max(0.0, width - credit_per_share) * 100.0)
 
     if strategy == OptionsStrategy.BEAR_CALL_SPREAD:
         if len(call_strikes) < 2:
-            return None, None
+            return None, None, None
         width = abs(call_strikes[-1] - call_strikes[0])
-        return max(0.0, (width - max(0.0, -per_share_premium))) * 100.0, None
+        return defined(max(0.0, width - credit_per_share) * 100.0)
 
     if strategy == OptionsStrategy.IRON_CONDOR:
         if not put_strikes or not call_strikes:
-            return None, None
+            return None, None, None
         put_width = abs(put_strikes[-1] - put_strikes[0])
         call_width = abs(call_strikes[-1] - call_strikes[0])
+        # Only one side can finish in the money, so the risk is the wider wing.
         wing = max(put_width, call_width)
-        return max(0.0, (wing - max(0.0, -per_share_premium))) * 100.0, None
+        return defined(max(0.0, wing - credit_per_share) * 100.0)
 
-    return None, None
+    return None, None, None
 
 
 def reconcile_direction(

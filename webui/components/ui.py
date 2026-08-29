@@ -2,10 +2,8 @@
 webui/components/ui.py
 """
 
-from datetime import datetime
 from webui.utils.state import app_state
 from webui.utils.charts import create_chart, create_welcome_chart
-import time
 
 
 def render_researcher_debate(symbol):

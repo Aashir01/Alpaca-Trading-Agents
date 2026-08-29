@@ -7,7 +7,7 @@ import pandas as pd
 from functools import wraps
 import time
 
-from .utils import save_output, SavePathType, decorate_all_methods
+from .utils import SavePathType, decorate_all_methods
 
 
 def _history_with_retry(ticker, *, start: str, end: str, attempts: int = 3) -> DataFrame:

@@ -1,7 +1,6 @@
 """Tests for the walk-forward backtesting engine and its metrics."""
 
 import json
-import math
 import tempfile
 import unittest
 from pathlib import Path

@@ -5,7 +5,6 @@ pure arithmetic over injected account/order state, so nothing here mocks an
 LLM. Each guard is exercised on both sides of its threshold.
 """
 
-import json
 import tempfile
 import unittest
 from pathlib import Path

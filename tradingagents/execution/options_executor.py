@@ -7,13 +7,13 @@ strategist.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
 from alpaca.trading.requests import LimitOrderRequest, OptionLegRequest
 
 from ..agents.options_risk_gate import OptionsStrategy, evaluate_strategy, reconcile_direction
-from ..agents.schemas import OptionsLeg, OptionsStrategyProposal, RiskGateResult
+from ..agents.schemas import OptionsLeg, OptionsStrategyProposal
 from ..dataflows.alpaca_utils import AlpacaUtils, get_alpaca_trading_client
 from ..safety import get_safety_guard
 
@@ -78,6 +78,7 @@ def submit_options_plan(
     market_quotes: Optional[dict] = None,
     max_loss_pct: float = 2.0,
     max_spread_pct: float = 20.0,
+    stress_move_pct: float = 20.0,
 ) -> dict:
     """Submit a multi-leg options order, or return a veto/failure record.
 
@@ -86,8 +87,9 @@ def submit_options_plan(
         final_action: the final equity signal from the risk judge (BUY/HOLD/SELL/LONG/NEUTRAL/SHORT).
         qty: number of spread units to trade.
         market_quotes: optional symbol -> {bid, ask} map for gate re-check.
-        max_loss_pct: max defined loss as % of equity.
+        max_loss_pct: max risk-sized loss as % of equity.
         max_spread_pct: max bid-ask spread % allowed.
+        stress_move_pct: adverse move used to size collateralized shorts.
 
     Returns:
         A status dict with ``submitted`` (bool), ``order_id`` (str or None),
@@ -115,6 +117,7 @@ def submit_options_plan(
         chain=chain_map,
         max_loss_pct=max_loss_pct,
         max_spread_pct=max_spread_pct,
+        stress_move_pct=stress_move_pct,
     )
     if not gate_result.approved:
         return {
@@ -129,10 +132,22 @@ def submit_options_plan(
     except Exception as exc:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": f"Trading client error: {exc}"}
 
-    limit_price = proposal.expected_credit_debit
-    if limit_price is None:
-        # Should not happen for a real plan; use a tiny positive debit as a safe fallback.
-        limit_price = 0.01
+    # Price the order from the gate's own figure, not the model's estimate.
+    # gate_result.net_credit_debit is the net premium per spread unit computed
+    # from live bid/ask mid; Alpaca wants a positive per-share limit price and
+    # infers debit vs credit from the legs, so take the magnitude.
+    gate_premium = gate_result.net_credit_debit
+    if gate_premium:
+        limit_price = round(abs(gate_premium) / 100.0, 2)
+    else:
+        limit_price = None
+    if not limit_price or limit_price <= 0:
+        return {
+            "submitted": False,
+            "order_id": None,
+            "gate_result": gate_result.model_dump(mode="json"),
+            "error": "Could not derive a limit price from live quotes; refusing to price from the model estimate.",
+        }
 
     # Alpaca requires >= 2 legs for MLEG. Single-leg strategies (long call/put,
     # cash-secured put, covered call) use a simple option limit order.
@@ -142,7 +157,7 @@ def submit_options_plan(
         order_request = LimitOrderRequest(
             symbol=leg.symbol.upper(),
             qty=qty * leg.ratio_qty,
-            limit_price=abs(limit_price),
+            limit_price=limit_price,
             time_in_force=TimeInForce.DAY,
             order_class=OrderClass.SIMPLE,
             side=OrderSide.BUY if leg.side == "buy" else OrderSide.SELL,
@@ -178,6 +193,8 @@ def submit_options_plan(
             "submitted": True,
             "order_id": str(submitted_order.id) if submitted_order else None,
             "gate_result": gate_result.model_dump(mode="json"),
+            "limit_price": limit_price,
+            "model_estimate": proposal.expected_credit_debit,
             "error": None,
         }
     except Exception as exc:

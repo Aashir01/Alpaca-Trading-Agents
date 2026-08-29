@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -19,9 +18,10 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
 
-from .alpaca_utils import get_alpaca_stock_client, get_alpaca_trading_client
+from .alpaca_utils import AlpacaUtils, get_alpaca_stock_client
 from .config import get_api_key
 
 _OPTION_SYMBOL_RE = re.compile(
@@ -59,6 +59,9 @@ class OptionsMarketContext:
     hv_20: Optional[float]
     days_to_earnings: Optional[int]
     timestamp: str
+    # Number of stored IV observations behind iv_rank/iv_percentile. Fewer than
+    # ~20 and those figures are not yet meaningful; the prompt says so outright.
+    iv_history_days: int = 0
 
 
 def _parse_option_symbol(symbol: str) -> tuple[Optional[str], Optional[date], Optional[float], Optional[str]]:
@@ -133,18 +136,42 @@ def save_iv_history(symbol: str, trade_date: str, atm_iv: float, cache_dir: Opti
 def compute_iv_rank(atm_iv: float, history: Sequence[float]) -> tuple[Optional[float], Optional[float]]:
     """Return (iv_rank, iv_percentile) for ``atm_iv`` against a history series.
 
-    ``iv_rank`` is the percentile rank 0-100 of the current IV in the history.
-    ``iv_percentile`` is the same value expressed 0-1.
+    These are two genuinely different statistics, and the strategy selection
+    rules read both:
+
+    * ``iv_rank`` is where current IV sits between the historical low and high,
+      ``(iv - min) / (max - min) * 100``. It answers "is vol expensive relative
+      to its own range?"
+    * ``iv_percentile`` is the fraction of past observations below current IV
+      (0-1), midpoint convention for ties. It answers "how often has vol been
+      cheaper than this?"
+
+    A series containing one extreme spike can show a low rank and a high
+    percentile at the same time, which is precisely when selling premium on
+    "high IV" would be a mistake.
     """
-    if not history or atm_iv is None:
+    if atm_iv is None:
         return None, None
-    lower_count = sum(1 for h in history if h < atm_iv)
-    equal_count = sum(1 for h in history if h == atm_iv)
-    n = len(history)
-    if n == 0:
+    series = [float(h) for h in history if h is not None]
+    if not series:
         return None, None
-    rank = (lower_count + equal_count / 2.0) / n * 100.0
-    return rank, rank / 100.0
+
+    low, high = min(series), max(series)
+    if high > low:
+        # Rounded because these values are rendered into prompts and persisted
+        # as JSON, where a trailing 49.999999999999986 is just noise.
+        iv_rank = round(max(0.0, min(100.0, (atm_iv - low) / (high - low) * 100.0)), 6)
+    else:
+        # Degenerate history (every observation identical): the range-based
+        # rank is undefined, so report the neutral midpoint.
+        iv_rank = 50.0
+
+    n = len(series)
+    lower = sum(1 for h in series if h < atm_iv)
+    equal = sum(1 for h in series if h == atm_iv)
+    iv_percentile = round((lower + equal / 2.0) / n, 6)
+
+    return iv_rank, iv_percentile
 
 
 def _option_snapshot_to_quote(
@@ -237,8 +264,66 @@ def get_option_chain_context(
             continue
 
     if spot is not None:
-        quotes.sort(key=lambda q: (abs((q.strike or 0) - spot), (q.expiry or date.max)))
+        quotes = sort_chain_near_the_money(quotes, spot)
     return quotes
+
+
+def sort_chain_near_the_money(quotes: list[OptionQuote], spot: float) -> list[OptionQuote]:
+    """Order a chain by distance from the money, then by nearest expiry.
+
+    Callers slice the head of this list as "near-the-money candidates", so the
+    ordering is load-bearing: contracts with no strike sort last rather than
+    being treated as zero-distance.
+    """
+    return sorted(
+        quotes,
+        key=lambda q: (
+            abs(q.strike - spot) if q.strike is not None else float("inf"),
+            q.expiry or date.max,
+        ),
+    )
+
+
+def _select_atm_iv(chain: Sequence[OptionQuote], spot: Optional[float]) -> Optional[float]:
+    """Return at-the-money implied volatility for the front expiry.
+
+    Taking "the first contract that has an IV" off an unsorted chain can land on
+    a deep out-of-the-money wing, whose IV is far from ATM because of skew. IV
+    rank is computed from this number and drives strategy selection, so it has
+    to be the real ATM.
+
+    Picks the nearest expiry, then the strike closest to spot, then averages the
+    call and put IV at that strike (the standard ATM convention - the two differ
+    slightly through put/call parity and dividends).
+    """
+    candidates = [q for q in chain if q.iv is not None and q.iv > 0]
+    if not candidates:
+        return None
+
+    if spot is None:
+        # Without spot we cannot identify the money. The median IV of the chain
+        # is a far better central estimate than an arbitrary contract.
+        ivs = sorted(q.iv for q in candidates)
+        return float(np.median(ivs))
+
+    dated = [q for q in candidates if q.expiry is not None]
+    if dated:
+        front_expiry = min(q.expiry for q in dated)
+        candidates = [q for q in dated if q.expiry == front_expiry]
+
+    strikes = [q for q in candidates if q.strike is not None]
+    if not strikes:
+        return float(np.median(sorted(q.iv for q in candidates)))
+
+    atm_strike = min(strikes, key=lambda q: abs(q.strike - spot)).strike
+    at_strike = [q for q in strikes if q.strike == atm_strike]
+
+    call_iv = next((q.iv for q in at_strike if q.option_type == "call"), None)
+    put_iv = next((q.iv for q in at_strike if q.option_type == "put"), None)
+    both = [iv for iv in (call_iv, put_iv) if iv is not None]
+    if both:
+        return float(sum(both) / len(both))
+    return float(at_strike[0].iv)
 
 
 def _annualized_hv(prices: pd.Series, window: int = 20) -> Optional[float]:
@@ -280,27 +365,27 @@ def get_options_market_context(
         client=client,
     )
 
-    atm_iv: Optional[float] = None
-    if chain:
-        for quote in chain:
-            if quote.iv is not None:
-                atm_iv = quote.iv
-                break
-        if atm_iv is None:
-            # Fallback: use mid of bid/ask as a proxy if IV is missing.
-            for quote in chain:
-                if quote.bid is not None and quote.ask is not None:
-                    atm_iv = (quote.bid + quote.ask) / 2.0
-                    break
+    # A chain supplied by the caller may have been fetched before spot was
+    # known, and therefore be unsorted. Sort it here so "near the money" is
+    # true for both ATM IV selection and the candidates shown to the LLM.
+    if spot is not None and chain:
+        chain = sort_chain_near_the_money(chain, spot)
+
+    atm_iv = _select_atm_iv(chain, spot) if chain else None
 
     if trade_date is None:
         trade_date = datetime.now().date().isoformat()
 
     iv_rank: Optional[float] = None
     iv_percentile: Optional[float] = None
+    history_days = 0
     if atm_iv is not None:
         history = load_iv_history(symbol)
-        iv_rank, iv_percentile = compute_iv_rank(atm_iv, list(history.values()))
+        # Rank against history as it stood *before* today, so the current
+        # observation cannot rank itself.
+        prior = [v for k, v in history.items() if str(k) != str(trade_date)]
+        history_days = len(prior)
+        iv_rank, iv_percentile = compute_iv_rank(atm_iv, prior)
         save_iv_history(symbol, str(trade_date), atm_iv)
 
     hv_20 = _fetch_hv_20(symbol)
@@ -315,19 +400,46 @@ def get_options_market_context(
         hv_20=hv_20,
         days_to_earnings=days_to_earnings,
         timestamp=datetime.now().isoformat(),
+        iv_history_days=history_days,
     )
     return context, chain
 
 
 def _fetch_spot(symbol: str) -> Optional[float]:
-    """Best-effort spot price via the existing Alpaca stock quote path."""
+    """Best-effort spot price via the existing Alpaca stock quote path.
+
+    Reuses ``AlpacaUtils.get_latest_quote``, which already returns a normalized
+    dict. Spot drives near-the-money chain sorting and ATM IV selection, so a
+    failure here silently degrades strike selection - it is logged, not
+    swallowed.
+    """
     try:
-        df = get_alpaca_stock_client().get_stock_latest_quote(StockLatestQuoteRequest(symbol_or_symbols=symbol.upper()))
-        if df is not None and not df.empty:
-            return (float(df.iloc[0].get("bid_price", 0)) + float(df.iloc[0].get("ask_price", 0))) / 2.0
-    except Exception:
-        pass
-    return None
+        quote = AlpacaUtils.get_latest_quote(symbol.upper())
+    except Exception as exc:
+        print(f"[options_data] spot lookup failed for {symbol}: {exc}")
+        return None
+
+    if not quote:
+        print(f"[options_data] no quote returned for {symbol}; spot unavailable")
+        return None
+
+    bid = quote.get("bid_price")
+    ask = quote.get("ask_price")
+    prices = [float(p) for p in (bid, ask) if p not in (None, 0)]
+    if not prices:
+        print(f"[options_data] quote for {symbol} had no usable bid/ask")
+        return None
+    return sum(prices) / len(prices)
+
+
+def fetch_spot_price(symbol: str) -> Optional[float]:
+    """Public spot-price lookup for callers that need it before the chain.
+
+    Strike selection depends on knowing where the money is, so the strategist
+    resolves spot first and threads it through both the chain fetch and the
+    market-context build.
+    """
+    return _fetch_spot(symbol)
 
 
 def _fetch_hv_20(symbol: str) -> Optional[float]:
@@ -336,13 +448,19 @@ def _fetch_hv_20(symbol: str) -> Optional[float]:
         end = datetime.now()
         start = end - timedelta(days=60)
         bars = get_alpaca_stock_client().get_stock_bars(
-            StockBarsRequest(symbol_or_symbols=symbol.upper(), timeframe="1Day", start=start, end=end)
+            StockBarsRequest(
+                symbol_or_symbols=symbol.upper(),
+                timeframe=TimeFrame.Day,
+                start=start,
+                end=end,
+            )
         )
         if bars is None or bars.df.empty:
             return None
         prices = bars.df["close"].dropna()
         return _annualized_hv(prices, window=20)
-    except Exception:
+    except Exception as exc:
+        print(f"[options_data] HV-20 lookup failed for {symbol}: {exc}")
         return None
 
 

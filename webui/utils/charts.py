@@ -4,11 +4,8 @@ import random
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pandas as pd
-import traceback
 import pytz
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
-from tradingagents.dataflows.config import get_alpaca_api_key, get_alpaca_secret_key
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from typing import Union
 
 def create_chart(ticker: str, period: str = "1y", end_date: Union[str, datetime] = None):
@@ -79,7 +76,7 @@ def create_chart(ticker: str, period: str = "1y", end_date: Union[str, datetime]
     
     fig.update_layout(
         title=title,
-        template="plotly_white",
+        template="plotly_dark",
         xaxis_rangeslider_visible=False,
         xaxis=dict(
             type='date',
@@ -92,6 +89,28 @@ def create_chart(ticker: str, period: str = "1y", end_date: Union[str, datetime]
         margin=dict(l=40, r=40, t=40, b=40),
         autosize=True
     )
+    return _apply_chart_theme(fig)
+
+
+# Charts render inside a dark app shell; a light template punches a white
+# hole through the page. These values mirror the tokens in dashboard.css.
+CHART_THEME = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#97A3BA", family="Inter, -apple-system, Segoe UI, sans-serif", size=12),
+    title_font=dict(color="#E9EEF9", size=14),
+    legend=dict(font=dict(size=11)),
+    hoverlabel=dict(bgcolor="#141B2D", bordercolor="#2E3A54",
+                    font=dict(color="#E9EEF9", size=12)),
+)
+_AXIS_THEME = dict(gridcolor="#222C42", zerolinecolor="#222C42", linecolor="#222C42")
+
+
+def _apply_chart_theme(fig):
+    """Apply the shared dark theme without clobbering per-chart axis settings."""
+    fig.update_layout(**CHART_THEME)
+    fig.update_xaxes(**_AXIS_THEME)
+    fig.update_yaxes(**_AXIS_THEME)
     return fig
 
 
@@ -145,7 +164,7 @@ def create_demo_chart(ticker, period="1y", end_date=None, error_msg=None):
     
     fig.update_layout(
         title=title, 
-        template="plotly_white", 
+        template="plotly_dark", 
         xaxis_rangeslider_visible=False,
         xaxis=dict(
             type='date',
@@ -161,17 +180,17 @@ def create_demo_chart(ticker, period="1y", end_date=None, error_msg=None):
     if error_msg:
         fig.add_annotation(x=0.5,y=0.1,xref='paper',yref='paper',text=f"DEMO DATA: {error_msg}",
                            showarrow=False,font=dict(color='red',size=12),
-                           bgcolor='rgba(255,255,255,0.7)',bordercolor='red',borderwidth=1)
-    return fig
+                           bgcolor='rgba(20,27,45,0.85)',bordercolor='#FF5F5F',borderwidth=1)
+    return _apply_chart_theme(fig)
 
 
 def create_welcome_chart():
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=[0,1,2,3], y=[1,3,2,4], mode='lines', name='Welcome'))
     fig.update_layout(
-        title="Welcome to AlpacaTradingAgent", template="plotly_white",
+        title="Welcome to Options Alpha", template="plotly_dark",
         annotations=[dict(x=1.5,y=2.5,xref='x',yref='y',text="Select symbols and click 'Start Analysis'",
                          showarrow=True,arrowhead=1,ax=0,ay=-40)],
         height=400, margin=dict(l=40,r=40,t=40,b=40), autosize=True
     )
-    return fig
+    return _apply_chart_theme(fig)

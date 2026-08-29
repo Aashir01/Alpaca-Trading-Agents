@@ -28,7 +28,7 @@ def register_status_callbacks(app):
             "Analyst Team": getattr(app_state, 'active_analysts', []),
             "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
             "Trading Team": ["Trader"],
-            "Risk Management": ["Risky Analyst", "Safe Analyst", "Neutral Analyst", "Portfolio Manager"]
+            "Risk Management": ["Options Strategist", "Risky Analyst", "Safe Analyst", "Neutral Analyst", "Portfolio Manager"]
         }
         
         # Create table header
@@ -125,7 +125,6 @@ def register_status_callbacks(app):
                 # Format next execution time
                 try:
                     from webui.utils.market_hours import get_next_market_datetime
-                    import datetime
                     
                     next_times = []
                     for hour in app_state.market_hours:
