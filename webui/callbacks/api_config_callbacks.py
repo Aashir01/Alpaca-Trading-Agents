@@ -10,7 +10,7 @@ Handles:
 """
 
 import os
-from dash import Input, Output, State, callback_context as ctx, no_update, ALL
+from dash import Input, Output, State, callback_context as ctx
 from dash.exceptions import PreventUpdate
 from dotenv import load_dotenv
 

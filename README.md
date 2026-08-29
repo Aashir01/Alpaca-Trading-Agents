@@ -8,7 +8,7 @@
 
 <div align="center">
 
-🚀 [Enhanced Features](#enhanced-features) | ⚡ [Installation & Setup](#installation-and-setup) | 📦 [Package Usage](#alpacatradingagent-package) | 🌐 [Web Interface](#web-ui-usage) | 📖 [Complete Guide](#complete-guide) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
+🚀 [Enhanced Features](#enhanced-features) | 📐 [Options Alpha](#options-alpha-autonomous-defined-risk-options-overlay) | ⚡ [Installation & Setup](#installation-and-setup) | 📦 [Package Usage](#alpacatradingagent-package) | 🌐 [Web Interface](#web-ui-usage) | 📖 [Complete Guide](#complete-guide) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
 
 ⏱️ New here? **[QUICKSTART.md](QUICKSTART.md)** — first analysis in ~5 minutes · 🏗️ **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the pipeline works inside
 
@@ -100,6 +100,123 @@ Our enhanced framework decomposes complex trading tasks into specialized roles w
 
 ### Risk Management and Portfolio Manager
 - Continuously evaluates portfolio risk across stocks and crypto assets. Monitors margin requirements, position sizes, and overall portfolio exposure. Provides real-time risk assessment and position management through the Alpaca integration.
+
+## Options Alpha: Autonomous Defined-Risk Options Overlay
+
+The **Options Strategist** runs between the Trader and the risk debate. It turns the
+Trader's directional signal into a *defined-risk options structure*, then hands that
+structure to a deterministic risk gate that can veto it. The LLM chooses the shape of
+the trade; arithmetic over live quotes decides whether it is allowed and what it costs.
+
+### The pipeline
+
+```
+Analysts → Researchers → Research Manager → Trader
+                                              │
+                                              ▼
+                                    Options Strategist  ── LLM picks a structure
+                                              │
+                                              ▼
+                                    Options Risk Gate   ── deterministic veto
+                                              │
+                                              ▼
+                                    Risk Debate → Risk Judge
+                                              │
+                                              ▼
+                              Direction reconciliation → Alpaca MLEG order
+```
+
+### Where the AI stops and arithmetic starts
+
+This split is the core design decision. The model is good at reading market context and
+choosing a structure; it is not a source of truth for numbers that decide risk.
+
+| Decision | Owner |
+| --- | --- |
+| Which structure to trade (long call, vertical, condor, CSP…) | LLM |
+| Which strikes and expiries | LLM, restricted to contracts present in the live chain |
+| Net premium of the position | **Recomputed from live bid/ask**, never the model's estimate |
+| Max loss and position sizing | **Recomputed from strikes and live premium** |
+| The order's limit price | **Derived from the gate's premium**, not the model's estimate |
+| Whether the trade is allowed at all | **Deterministic risk gate** |
+
+A model that hallucinates a $99.99 premium on a $2.55 spread cannot move the order price
+by a cent — there is a regression test that asserts exactly this.
+
+### Risk gate rules
+
+Every rule is arithmetic over the live chain, and any single failure vetoes the trade:
+
+- **No undefined risk.** Every short leg must be paired with a long leg of the same type
+  and expiry at a different strike, or the position must be fully collateralized
+  (cash-secured put, covered call). A naked short leg is never submitted.
+- **Loss cap.** Risk-sized loss must stay under `OPTIONS_MAX_LOSS_PCT` of account equity.
+- **Liquidity.** Any leg whose bid-ask spread exceeds `OPTIONS_MAX_SPREAD_PCT` of its mid
+  is rejected. Missing or zero quotes are rejected rather than assumed.
+- **Buying power and collateral.** Net debits are checked against buying power; a
+  cash-secured put must be fully cash-collateralized; a covered call must be backed by
+  100 real shares per contract, verified against live Alpaca positions.
+- **Direction reconciliation.** The risk judge may flip the signal after the strategist
+  ran. A plan whose direction no longer matches the final decision is dropped, not sent.
+- **Fail-closed re-check.** The executor re-runs the whole gate against fresh quotes
+  immediately before submitting. Approval at proposal time is not approval at order time.
+
+#### Honest worst-case reporting
+
+A cash-secured put's true worst case is assignment with the stock at zero. That number is
+honest but useless for sizing — applied literally it would veto every CSP ever written.
+So the gate reports **both**:
+
+- `max_loss_usd` — the real worst case, to zero, less the credit.
+- `stress_loss_usd` — the loss at `OPTIONS_STRESS_MOVE_PCT` below the short strike, which
+  is what the equity limit is actually applied to.
+
+For every defined-risk structure the two are identical. They only diverge for
+collateralized shorts, which is exactly where a single number would mislead.
+
+#### IV rank and IV percentile are not the same number
+
+- **IV rank** = `(iv − min) / (max − min) × 100` — where vol sits in its own range.
+- **IV percentile** = fraction of past observations below current IV.
+
+A series with one volatility spike produces a *low rank* and a *high percentile*
+simultaneously. That is precisely the case where "high IV, sell premium" is the wrong
+read, so the strategist is shown both and told to trust the percentile when they disagree.
+
+IV rank needs history to mean anything. The context reports how many observations stand
+behind it, and below `OPTIONS_MIN_IV_HISTORY_DAYS` the model is told the rank is
+unreliable and steered toward long-premium structures. Build that history before trading:
+
+```bash
+python scripts/record_iv_history.py --symbols SPY QQQ AAPL MSFT NVDA
+```
+
+Run it once a day (cron or CI). It records one true ATM implied-volatility observation per
+symbol — the average of the ATM call and put in the front expiry, not whichever contract
+happened to come back first.
+
+### Enabling it
+
+Options trading is off by default. In `.env`:
+
+```bash
+OPTIONS_TRADING_ENABLED=True
+OPTIONS_DTE_MIN=7            # expiration window scanned, in days
+OPTIONS_DTE_MAX=45
+OPTIONS_MAX_LOSS_PCT=2.0     # risk-sized loss cap, % of equity
+OPTIONS_MAX_SPREAD_PCT=20.0  # reject legs wider than this % of mid
+OPTIONS_STRESS_MOVE_PCT=20.0 # adverse move used to size collateralized shorts
+OPTIONS_MAX_CONTRACTS=1      # spread units per trade
+```
+
+When enabled, the **Options Strategist** node is added to the graph, an **📐 Options** tab
+appears in the Web UI showing the structure, the gate's recomputed numbers, and the actual
+order outcome, and approved plans are submitted to Alpaca as multi-leg (MLEG) orders.
+
+> Options trading involves substantial risk and is not suitable for every investor. This
+> overlay is built and tested against Alpaca's **paper** trading environment. Read
+> [Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document)
+> before trading options with real capital.
 
 ## Installation and Setup
 

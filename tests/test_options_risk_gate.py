@@ -160,5 +160,93 @@ class TestOptionsRiskGate(unittest.TestCase):
         self.assertIn("does not match", reason)
 
 
+class TestCollateralizedRiskReporting(unittest.TestCase):
+    """A cash-secured put used to report a max loss of exactly zero."""
+
+    def _account(self, equity=100_000.0, buying_power=100_000.0):
+        return {"equity": equity, "buying_power": buying_power, "positions": []}
+
+    def _csp(self, strike=50.0):
+        return OptionsStrategyProposal(
+            strategy=OptionsStrategy.CASH_SECURED_PUT,
+            symbol="AAPL",
+            direction="bullish",
+            legs=[
+                OptionsLeg(
+                    symbol="CSP",
+                    side="sell",
+                    ratio_qty=1,
+                    strike=strike,
+                    expiry="2025-01-17",
+                    option_type="put",
+                )
+            ],
+            rationale="high IV, willing to own",
+        )
+
+    def test_csp_reports_a_real_worst_case(self):
+        result = evaluate_strategy(
+            self._csp(strike=50.0),
+            qty=1,
+            account=self._account(),
+            chain={"CSP": {"bid": 1.90, "ask": 2.10}},
+        )
+        # Assignment at zero, less the $2.00/share credit: (50 - 2) * 100.
+        self.assertAlmostEqual(result.max_loss_usd, 4800.0)
+        self.assertGreater(result.max_loss_usd, 0.0)
+
+    def test_csp_is_sized_off_the_stressed_move_not_the_to_zero_loss(self):
+        """The to-zero figure is honest but would veto every CSP ever written."""
+        result = evaluate_strategy(
+            self._csp(strike=50.0),
+            qty=1,
+            account=self._account(),
+            chain={"CSP": {"bid": 1.90, "ask": 2.10}},
+            max_loss_pct=2.0,
+            stress_move_pct=20.0,
+        )
+        # A 20% adverse move on a $50 strike is $10/share, less $2 credit = $800.
+        self.assertAlmostEqual(result.stress_loss_usd, 800.0)
+        self.assertLess(result.stress_loss_usd, result.max_loss_usd)
+        self.assertTrue(result.approved, result.reasons)
+
+    def test_oversized_csp_is_still_vetoed(self):
+        result = evaluate_strategy(
+            self._csp(strike=500.0),
+            qty=1,
+            account=self._account(equity=100_000.0, buying_power=1_000_000.0),
+            chain={"CSP": {"bid": 1.90, "ask": 2.10}},
+            max_loss_pct=2.0,
+            stress_move_pct=20.0,
+        )
+        # 20% of a $500 strike is $100/share = $9,800 > 2% of $100k.
+        self.assertFalse(result.approved)
+        self.assertTrue(any("exceeds" in r for r in result.reasons), result.reasons)
+
+    def test_debit_vertical_risk_is_the_net_debit(self):
+        proposal = OptionsStrategyProposal(
+            strategy=OptionsStrategy.BULL_CALL_SPREAD,
+            symbol="AAPL",
+            direction="bullish",
+            legs=[
+                OptionsLeg(symbol="LONG", side="buy", ratio_qty=1, strike=150.0,
+                           expiry="2025-01-17", option_type="call"),
+                OptionsLeg(symbol="SHORT", side="sell", ratio_qty=1, strike=155.0,
+                           expiry="2025-01-17", option_type="call"),
+            ],
+            rationale="moderate bullish conviction, mid IV",
+        )
+        result = evaluate_strategy(
+            proposal,
+            qty=1,
+            account=self._account(),
+            chain={"LONG": {"bid": 3.00, "ask": 3.10}, "SHORT": {"bid": 1.00, "ask": 1.10}},
+        )
+        # Net debit per share = 3.05 - 1.05 = 2.00 -> $200 per spread.
+        self.assertAlmostEqual(result.max_loss_usd, 200.0)
+        self.assertAlmostEqual(result.stress_loss_usd, 200.0)
+        self.assertTrue(result.approved, result.reasons)
+
+
 if __name__ == "__main__":
     unittest.main()

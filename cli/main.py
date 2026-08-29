@@ -1,4 +1,3 @@
-from typing import Optional
 import datetime
 import typer
 from rich.console import Console
@@ -12,18 +11,14 @@ from rich.text import Text
 from rich.live import Live
 from rich.table import Table
 from collections import deque
-import time
-from rich.tree import Tree
 from rich import box
 from rich.align import Align
-from rich.rule import Rule
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.graph.checkpointer import clear_checkpoint
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.run_logger import get_run_audit_logger
 from tradingagents.agents.schemas import trade_intent_action
-from cli.models import AnalystType
 from cli.utils import *
 
 console = Console()

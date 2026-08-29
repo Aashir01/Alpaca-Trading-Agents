@@ -2,7 +2,6 @@
 
 from typing import Dict, Any
 from tradingagents.agents.utils.agent_states import (
-    AgentState,
     InvestDebateState,
     RiskDebateState,
 )
@@ -68,6 +67,8 @@ class Propagator:
             "trading_mode": "",
             "current_position": "NEUTRAL",
             "recommended_action": "",
+            "options_strategy_report": "",
+            "options_trade_plan": None,
         }
 
     def get_graph_args(self) -> Dict[str, Any]:

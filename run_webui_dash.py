@@ -5,7 +5,6 @@ run_webui_dash.py - Run the Dash-based web UI for TradingAgents
 
 import argparse
 import sys
-import os
 import socket
 from webui.app_dash import run_app  
 

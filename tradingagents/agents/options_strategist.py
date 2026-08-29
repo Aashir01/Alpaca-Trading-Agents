@@ -6,18 +6,19 @@ deep LLM to pick a defined-risk strategy, then runs the deterministic risk gate.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..dataflows.alpaca_utils import AlpacaUtils
-from ..dataflows.options_data import get_option_chain_context, get_options_market_context
+from ..dataflows.options_data import (
+    fetch_spot_price,
+    get_option_chain_context,
+    get_options_market_context,
+)
 from ..prompts import render_prompt
 from .options_risk_gate import evaluate_strategy
 from .schemas import OptionsStrategyProposal
 from .utils.structured import bind_structured
 
-
-class _OptionsNotEnabled:
-    pass
 
 
 def _extract_confidence(trader_plan: Any) -> str:
@@ -106,14 +107,19 @@ def create_options_strategist(llm, config=None):
             }
 
         try:
+            # Spot must be resolved before the chain: it is what makes
+            # "near the money" mean anything. Without it the chain comes back
+            # unsorted and the candidates below are an arbitrary slice.
+            spot = fetch_spot_price(symbol)
             chain_quotes = get_option_chain_context(
                 symbol,
-                spot=None,
+                spot=spot,
                 dte_min=int(config.get("options_dte_min", 7)),
                 dte_max=int(config.get("options_dte_max", 45)),
             )
-            market_context, _ = get_options_market_context(
+            market_context, chain_quotes = get_options_market_context(
                 symbol,
+                spot=spot,
                 trade_date=trade_date,
                 dte_min=int(config.get("options_dte_min", 7)),
                 dte_max=int(config.get("options_dte_max", 45)),
@@ -122,6 +128,16 @@ def create_options_strategist(llm, config=None):
         except Exception as exc:
             return {
                 "options_strategy_report": f"Failed to fetch options market context: {exc}",
+                "options_trade_plan": None,
+                "sender": "Options Strategist",
+            }
+
+        if market_context.spot is None:
+            return {
+                "options_strategy_report": (
+                    "Spot price unavailable for "
+                    f"{symbol}; refusing to select strikes from an unsorted chain."
+                ),
                 "options_trade_plan": None,
                 "sender": "Options Strategist",
             }
@@ -140,6 +156,7 @@ def create_options_strategist(llm, config=None):
             iv_percentile=market_context.iv_percentile if market_context.iv_percentile is not None else "null",
             hv_20=market_context.hv_20 or "unknown",
             days_to_earnings=market_context.days_to_earnings if market_context.days_to_earnings is not None else "null",
+            iv_history_days=market_context.iv_history_days,
             near_the_money_chain=chain_summary,
         )
 
@@ -159,17 +176,14 @@ def create_options_strategist(llm, config=None):
                 chain_map[q.symbol] = {"bid": q.bid, "ask": q.ask}
 
         account = _build_account_snapshot()
-        gate_config = {
-            "options_max_loss_pct": float(config.get("options_max_loss_pct", 2.0)),
-            "options_max_spread_pct": float(config.get("options_max_spread_pct", 20.0)),
-        }
         gate_result = evaluate_strategy(
             proposal,
-            qty=1,
+            qty=int(config.get("options_max_contracts", 1)),
             account=account,
             chain=chain_map,
-            max_loss_pct=gate_config["options_max_loss_pct"],
-            max_spread_pct=gate_config["options_max_spread_pct"],
+            max_loss_pct=float(config.get("options_max_loss_pct", 2.0)),
+            max_spread_pct=float(config.get("options_max_spread_pct", 20.0)),
+            stress_move_pct=float(config.get("options_stress_move_pct", 20.0)),
         )
 
         if not gate_result.approved:
@@ -193,8 +207,10 @@ def create_options_strategist(llm, config=None):
             f"**Options Strategy**: {proposal.strategy.value}\n\n"
             f"**Direction**: {proposal.direction}\n"
             f"**Legs**: {plan_dict.get('legs', [])}\n\n"
-            f"**IV Context**: rank={market_context.iv_rank}, atm_iv={market_context.atm_iv}, "
-            f"hv_20={market_context.hv_20}, dte={market_context.days_to_earnings}\n\n"
+            f"**IV Context**: rank={market_context.iv_rank} "
+            f"(from {market_context.iv_history_days} days of IV history), "
+            f"atm_iv={market_context.atm_iv}, hv_20={market_context.hv_20}, "
+            f"days_to_earnings={market_context.days_to_earnings}\n\n"
             f"**Rationale**: {proposal.rationale}\n\n"
             f"**Gate Result**: approved — max_loss=${gate_result.max_loss_usd}, "
             f"net_credit_debit={gate_result.net_credit_debit}\n"

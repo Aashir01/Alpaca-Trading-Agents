@@ -5,11 +5,8 @@ run_webui_dash_debug.py - Debug version with timeout and better error handling
 
 import argparse
 import sys
-import os
 import socket
-import signal
 import threading
-import time
 
 from webui.app_dash import run_app  
 

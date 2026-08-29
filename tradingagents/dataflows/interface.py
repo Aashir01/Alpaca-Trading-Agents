@@ -18,12 +18,10 @@ from .defillama_utils import get_fundamentals as get_defillama_fundamentals_util
 from .earnings_utils import get_earnings_calendar_data, get_earnings_surprises_analysis
 from .macro_utils import get_macro_economic_summary, get_economic_indicators_report, get_treasury_yield_curve
 from dateutil.relativedelta import relativedelta
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-import json
 import os
 import pandas as pd
-from .config import get_config, set_config, DATA_DIR, get_api_key
+from .config import get_config, DATA_DIR, get_api_key
 from .interface_utils import (
     _coerce_bool,
     extract_responses_text,

@@ -3,7 +3,7 @@ Ticker symbol format utilities for standardizing crypto and stock ticker formats
 """
 
 import re
-from typing import Dict, Tuple
+from typing import Dict
 
 
 class TickerUtils:

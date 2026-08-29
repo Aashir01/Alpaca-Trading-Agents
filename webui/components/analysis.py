@@ -212,6 +212,69 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount):
             state["trading_results"] = {"error": f"Trading execution error: {str(e)}"}
 
 
+def execute_options_plan_after_analysis(ticker, recommended_action):
+    """Submit the gate-approved options plan for ``ticker``, if there is one.
+
+    The options overlay is deliberately separate from the equity order: the
+    Options Strategist proposes off the Trader's signal, and the executor
+    re-runs the same risk gate against the final risk-adjusted action before
+    anything reaches the broker. A plan whose direction no longer matches is
+    dropped rather than submitted.
+    """
+    from tradingagents.dataflows.config import get_config
+
+    config = get_config() or {}
+    if not config.get("options_trading_enabled", False):
+        return
+
+    state = app_state.get_state(ticker)
+    if not state:
+        return
+
+    analysis_results = state.get("analysis_results") or {}
+    full_state = analysis_results.get("full_state") or {}
+    plan = full_state.get("options_trade_plan")
+    if not plan:
+        print(f"[OPTIONS] No gate-approved options plan for {ticker}; nothing to submit")
+        return
+
+    print(f"[OPTIONS] Submitting {plan.get('strategy')} for {ticker}")
+    try:
+        from tradingagents.execution import submit_options_plan
+
+        result = submit_options_plan(
+            plan,
+            final_action=recommended_action,
+            qty=int(config.get("options_max_contracts", 1)),
+            max_loss_pct=float(config.get("options_max_loss_pct", 2.0)),
+            max_spread_pct=float(config.get("options_max_spread_pct", 20.0)),
+            stress_move_pct=float(config.get("options_stress_move_pct", 20.0)),
+        )
+    except Exception as exc:
+        print(f"[OPTIONS] Options execution error for {ticker}: {exc}")
+        state["options_results"] = {"error": f"Options execution error: {exc}"}
+        return
+
+    state["options_results"] = result
+    if result.get("submitted"):
+        print(
+            f"[OPTIONS] Submitted {plan.get('strategy')} for {ticker} "
+            f"(order {result.get('order_id')}, limit {result.get('limit_price')})"
+        )
+        app_state.signal_trade_occurred()
+    else:
+        print(f"[OPTIONS] Not submitted for {ticker}: {result.get('error')}")
+
+    try:
+        get_run_audit_logger().log_event(
+            event_type="options_execution",
+            symbol=ticker,
+            payload=result,
+        )
+    except Exception as exc:
+        print(f"[OPTIONS] Could not write options audit entry: {exc}")
+
+
 def run_analysis(
     ticker,
     selected_analysts,
@@ -378,6 +441,10 @@ def run_analysis(
         # NEW: Persist the extracted decision so the trading engine can act on it directly
         current_state["recommended_action"] = decision
         current_state["final_trade_intent"] = trade_intent
+        current_state["current_reports"]["options_strategy_report"] = final_state.get(
+            "options_strategy_report"
+        )
+        current_state["options_trade_plan"] = final_state.get("options_trade_plan")
 
         # Mark all agents as completed
         for agent in current_state["agent_statuses"]:
@@ -408,6 +475,7 @@ def run_analysis(
         if trade_enabled:
             print(f"[TRADE] Trading enabled for {ticker}, executing trade with ${trade_amount}")
             execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
+            execute_options_plan_after_analysis(ticker, decision)
         else:
             print(f"[TRADE] Trading disabled for {ticker}, skipping trade execution")
 

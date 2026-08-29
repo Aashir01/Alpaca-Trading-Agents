@@ -4,11 +4,8 @@ import random
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pandas as pd
-import traceback
 import pytz
 from tradingagents.dataflows.alpaca_utils import AlpacaUtils
-from tradingagents.dataflows.config import get_alpaca_api_key, get_alpaca_secret_key
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from typing import Union
 
 def create_chart(ticker: str, period: str = "1y", end_date: Union[str, datetime] = None):

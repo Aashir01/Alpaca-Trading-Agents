@@ -188,6 +188,7 @@ class AppState:
                 "Risky Analyst": "pending",
                 "Safe Analyst": "pending",
                 "Neutral Analyst": "pending",
+                "Options Strategist": "pending",
                 "Portfolio Manager": "pending"
             },
             "current_reports": {
@@ -205,6 +206,7 @@ class AppState:
                 "safe_report": None,
                 "neutral_report": None,
                 "portfolio_decision": None,
+                "options_strategy_report": None,
                 "final_trade_decision": None
             },
             "agent_prompts": {
@@ -222,6 +224,7 @@ class AppState:
                 "safe_report": None,
                 "neutral_report": None,
                 "portfolio_decision": None,
+                "options_strategy_report": None,
                 "final_trade_decision": None
             },
             "investment_debate_state": None,
@@ -411,6 +414,7 @@ class AppState:
                     "safe_report": None,
                     "neutral_report": None,
                     "portfolio_decision": None,
+                    "options_strategy_report": None,
                     "final_trade_decision": None
                 },
                 "agent_prompts": {
@@ -427,6 +431,7 @@ class AppState:
                     "safe_report": None,
                     "neutral_report": None,
                     "portfolio_decision": None,
+                    "options_strategy_report": None,
                     "final_trade_decision": None
                 },
                 "agent_statuses": {
@@ -442,6 +447,7 @@ class AppState:
                     "Risky Analyst": "pending",
                     "Safe Analyst": "pending",
                     "Neutral Analyst": "pending",
+                    "Options Strategist": "pending",
                     "Portfolio Manager": "pending"
                 },
                 "analysis_results": None,

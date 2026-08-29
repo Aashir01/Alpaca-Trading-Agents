@@ -4,8 +4,8 @@ webui/components/reports_panel.py - Enhanced reports panel with symbol-based pag
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
-from webui.components.prompt_modal import create_prompt_modal, create_show_prompt_button
-from webui.components.tool_outputs_modal import create_tool_outputs_modal, create_show_tool_outputs_button
+from webui.components.prompt_modal import create_prompt_modal
+from webui.components.tool_outputs_modal import create_tool_outputs_modal
 
 
 def create_symbol_pagination(pagination_id, max_symbols=1):
@@ -167,6 +167,24 @@ def create_reports_panel():
             ),
             dbc.Tab(
                 html.Div(
+                    id="options-strategy-tab-content",
+                    children=[
+                        dcc.Markdown(
+                            "📐 **Loading Options Strategy...** \n\nThe selected options structure, the live-quote risk gate verdict, and any veto reasons will appear here.",
+                            mathjax=True,
+                            highlight_config={"theme": "dark"},
+                            dangerously_allow_html=False,
+                            className='enhanced-markdown-content'
+                        )
+                    ]
+                ),
+                label="📐 Options",
+                tab_id="options-strategy",
+                label_style={"color": "#94A3B8", "font-weight": "600"},
+                active_label_style={"color": "#FFFFFF", "font-weight": "700"}
+            ),
+            dbc.Tab(
+                html.Div(
                     id="risk-debate-tab-content",
                     children=[
                         html.P("⚖️ Loading Risk Debate...", className="loading-message"),
@@ -219,6 +237,7 @@ def create_reports_panel():
         html.Div(id="researcher-debate-tab", style={"display": "none"}),
         html.Div(id="research-manager-tab", style={"display": "none"}),
         html.Div(id="trader-plan-tab", style={"display": "none"}),
+        html.Div(id="options-strategy-tab", style={"display": "none"}),
         html.Div(id="risk-debate-tab", style={"display": "none"}),
         html.Div(id="final-decision-tab", style={"display": "none"})
     ])
