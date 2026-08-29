@@ -194,10 +194,10 @@ def update_display(layout, spinner_text=None):
     # Header with welcome message
     layout["header"].update(
         Panel(
-            "[bold green]Welcome to AlpacaTradingAgent CLI[/bold green]\n"
+            "[bold green]Welcome to the Options Alpha CLI[/bold green]\n"
             "[dim]Auditable multi-agent trading research framework[/dim]\n"
             "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
-            title="Welcome to AlpacaTradingAgent",
+            title="Welcome to Options Alpha",
             border_style="green",
             padding=(1, 2),
             expand=True,
@@ -387,7 +387,7 @@ def get_user_selections():
 
     # Create welcome box content
     welcome_content = f"{welcome_ascii}\n"
-    welcome_content += "[bold green]AlpacaTradingAgent: Auditable Multi-Agent Trading Research Framework - CLI[/bold green]\n\n"
+    welcome_content += "[bold green]Options Alpha: Autonomous Multi-Agent Options Trading on Alpaca - CLI[/bold green]\n\n"
     welcome_content += "[bold]Workflow Steps:[/bold]\n"
     welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
     welcome_content += (
@@ -399,7 +399,7 @@ def get_user_selections():
         welcome_content,
         border_style="green",
         padding=(1, 2),
-        title="Welcome to AlpacaTradingAgent",
+        title="Welcome to Options Alpha",
         subtitle="Paper trading, strategy testing, and risk-controlled execution",
     )
     console.print(Align.center(welcome_box))

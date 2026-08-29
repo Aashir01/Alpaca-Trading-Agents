@@ -5,8 +5,8 @@ From zero to a first multi-agent analysis in about five minutes.
 ## 1. Install
 
 ```bash
-git clone https://github.com/huygiatrng/AlpacaTradingAgent.git
-cd AlpacaTradingAgent
+git clone https://github.com/Aashir01/Alpaca-Trading-Agents.git
+cd Alpaca-Trading-Agents
 python -m venv .venv
 # Windows:
 .venv\Scripts\activate
@@ -35,19 +35,39 @@ Edit `.env` — the minimum to run:
 > API; switch to live only when you have a tested, reviewed setup and
 > accept the risk.
 
+### Optional: arm the options overlay
+
+Off by default. To add the Options Strategist and its risk gate to the graph:
+
+```bash
+OPTIONS_TRADING_ENABLED=True
+OPTIONS_MAX_LOSS_PCT=2.0     # cap risk-sized loss at 2% of equity
+```
+
+IV rank only means something with history behind it, so start recording it
+now — it takes calendar days to become useful:
+
+```bash
+python scripts/record_iv_history.py --symbols SPY QQQ AAPL MSFT NVDA
+```
+
 ## 3. Run
 
 ```bash
 python run_webui_dash.py
 ```
 
-Open the printed URL (usually `http://127.0.0.1:8050`), then:
+Open the printed URL (usually `http://127.0.0.1:7860`), then:
 
-1. Enter symbols — stocks (`NVDA, AAPL`), crypto (`BTC/USD`), or a mix.
-2. Pick your LLM provider/models and research depth.
-3. Press **Analyze** and watch the five analysts, the bull/bear debate,
-   and the risk team stream their reports live.
-4. Execute the recommendation manually, or enable auto-execution and
+1. Go to **Settings** and add your API keys if you skipped step 2.
+2. Open **Run Analysis** — enter symbols (stocks `NVDA, AAPL`, crypto
+   `BTC/USD`, or a mix), pick your LLM provider and research depth.
+3. Press **Start Analysis**. Switch to **Dashboard** to watch the agent
+   pipeline stream live, or **Agent Reports** to read each agent's output
+   as it lands.
+4. With the overlay armed, **Options Desk** shows the proposed structure
+   beside the risk gate's independently recomputed numbers.
+5. Execute the recommendation manually, or enable auto-execution and
    recurring scheduled analysis.
 
 Prefer a terminal? `python -m cli.main` runs the same pipeline
@@ -56,11 +76,12 @@ interactively.
 ## 4. Verify your setup
 
 ```bash
-python -m pytest tests/
+pip install pytest
+python -m pytest tests/ -q
 ```
 
-The suite is deterministic (no network, no live keys) — it should pass on
-a fresh clone.
+355 tests, deterministic (no network, no live keys) — they should all pass
+on a fresh clone.
 
 ## 5. Where results live
 
@@ -77,6 +98,9 @@ a fresh clone.
 | `unauthorized` from Alpaca | Keys expired or live keys used against paper — regenerate paper keys. |
 | Analysis stalls at an analyst | Usually a rate limit; lower research depth or increase the start delays in settings. |
 | Crypto symbol not found | Use the slash format: `BTC/USD`, not `BTCUSD`. |
+| Dashboard shows "Alpaca not connected" | Expected without keys — the UI refuses to render a fake `$0.00`. Add keys in **Settings**. |
+| Options Desk says "Disabled" | Set `OPTIONS_TRADING_ENABLED=True` in `.env` and restart. |
+| Every options trade gets vetoed | Check the veto reason on the Options Desk — usually a wide bid-ask spread or a loss above `OPTIONS_MAX_LOSS_PCT`. |
 
 Next: read [ARCHITECTURE.md](ARCHITECTURE.md) for how the pipeline works
 inside.

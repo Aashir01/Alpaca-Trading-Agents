@@ -188,7 +188,7 @@ def create_welcome_chart():
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=[0,1,2,3], y=[1,3,2,4], mode='lines', name='Welcome'))
     fig.update_layout(
-        title="Welcome to AlpacaTradingAgent", template="plotly_dark",
+        title="Welcome to Options Alpha", template="plotly_dark",
         annotations=[dict(x=1.5,y=2.5,xref='x',yref='y',text="Select symbols and click 'Start Analysis'",
                          showarrow=True,arrowhead=1,ax=0,ay=-40)],
         height=400, margin=dict(l=40,r=40,t=40,b=40), autosize=True

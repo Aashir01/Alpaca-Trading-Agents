@@ -28,7 +28,7 @@ REFRESH_INTERVALS = {
 
 # App configuration
 APP_CONFIG = {
-    "title": "TradingAgents - Multi-Agent Financial Analysis",
+    "title": "Options Alpha — Autonomous Options Trading Desk",
     "external_stylesheets": [
         "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     ],

@@ -1,7 +1,7 @@
 # Architecture Guide
 
-A concise map of how AlpacaTradingAgent works internally — for contributors
-and operators who want to know where things happen and why.
+A concise map of how Options Alpha works internally — for contributors and
+operators who want to know where things happen and why.
 
 ## The big picture
 
@@ -19,14 +19,24 @@ and operators who want to know where things happen and why.
 │  │ News               │      │ (N debate rounds)         │   │ risk debate           │   │
 │  │ Fundamentals       │      │ Research manager (judge)  │   │ Risk manager (judge)  │   │
 │  │ Macro (FRED)       │      └───────────────────────────┘   └──────────┬────────────┘   │
-│  └────────────────────┘                                                 │                │
-│        ▲ tools: Alpaca data, Finnhub, Google News, Reddit,              ▼                │
-│          CoinDesk/DeFiLlama (crypto), OpenAI web search       final decision +           │
-│                                                               typed TradeIntent          │
+│  └────────────────────┘                    │                            │                │
+│        ▲ tools: Alpaca data, Finnhub,      ▼                            ▼                │
+│          Google News, Reddit, CoinDesk/   Options Strategist  final decision +           │
+│          DeFiLlama (crypto), web search   + risk gate         typed TradeIntent          │
+│                                           (when enabled)                                 │
 └──────────────────────────────────────────────────────────────────┬───────────────────────┘
                                                                    ▼
-                                      Alpaca execution (paper or live) — market/close orders
+                    Alpaca execution (paper or live) — market/close orders, and
+                    defined-risk multi-leg (MLEG) options orders when the gate approves
 ```
+
+When `options_trading_enabled` is set, an **Options Strategist** node is spliced
+between the Trader and the risk debate. It reads the Trader's directional signal,
+proposes a defined-risk structure, and runs it through `options_risk_gate` — a
+pure module that recomputes net premium and max loss from live bid/ask and can
+veto the trade. The executor re-runs that same gate against fresh quotes before
+submission, and drops any plan whose direction no longer matches the Risk
+Judge's final call. See the README for the full rule set.
 
 Final decisions are executable actions (`BUY/HOLD/SELL` in investment mode,
 `LONG/NEUTRAL/SHORT` in trading mode), carried in a typed `TradeIntent`
@@ -39,13 +49,14 @@ advisory.
 | Path | Responsibility |
 |---|---|
 | `tradingagents/graph/` | LangGraph orchestration. `trading_graph.py` builds the graph and owns the LLM clients, memories, and reflection; `setup.py` wires nodes; `conditional_logic.py` controls debate rounds; `propagation.py` creates initial state; `signal_processing.py` extracts the final signal; `checkpointer.py` optional SQLite resume. |
-| `tradingagents/agents/` | The agents themselves: `analysts/` (market, social, news, fundamentals, macro), `researchers/` (bull/bear), `managers/`, `trader/`, `risk_mgmt/`, plus `utils/` (agent states, memory, trading modes) and `schemas.py` (typed `TradeIntent`). |
+| `tradingagents/agents/` | The agents themselves: `analysts/` (market, social, news, fundamentals, macro), `researchers/` (bull/bear), `managers/`, `trader/`, `risk_mgmt/`, plus `options_strategist.py` (LLM picks the structure), `options_risk_gate.py` (deterministic veto; pure, no I/O), `utils/` (agent states, memory, trading modes) and `schemas.py` (typed `TradeIntent` and the options schemas). |
+| `tradingagents/execution/` | Multi-leg options order submission with a fail-closed re-check through the same risk gate the strategist used. Prices from the gate's recomputed premium, never the model's estimate. |
 | `tradingagents/dataflows/` | Every external data source behind one interface: `alpaca_utils.py` (bars, quotes, account, orders, execution), Finnhub, Google News, Reddit, FRED macro, crypto sources, with a yfinance fallback for supported failures. `config.py` holds runtime config + API keys. |
 | `tradingagents/llm_clients/` | Provider adapters (OpenAI, Anthropic, Google, xAI, MiniMax, DeepSeek, Qwen, GLM, OpenRouter, Ollama, Azure, local endpoints) behind `create_llm_client`. |
 | `tradingagents/prompts/` | All agent prompts as editable text templates (`TRADINGAGENTS_PROMPT_DIR` overrides). |
 | `tradingagents/run_logger.py` | Append-only audit trail: every prompt, tool call, LLM call (with token usage), state snapshot, and final state per run under `eval_results/<symbol>/TradingAgentsStrategy_logs/runs/`. |
 | `tradingagents/default_config.py` | Single source of defaults; everything is overridable per run. |
-| `webui/` | Dash interface: `layout.py` composes panels from `components/`, `callbacks/` register interaction handlers, `utils/state.py` is the shared app state. Entry: `python run_webui_dash.py`. |
+| `webui/` | Dash application: `components/app_shell.py` provides the sidebar/top bar and page framing, `layout.py` composes seven page containers, `callbacks/` register interaction handlers (`navigation_callbacks.py` routes pages, `dashboard_callbacks.py` drives the dashboard and Options Desk), `utils/state.py` is the shared app state, `assets/dashboard.css` is the design system. Entry: `python run_webui_dash.py`. Pages are hidden rather than unmounted, so every component id stays mounted for the callbacks that target it. |
 | `cli/` | Terminal interface: `python -m cli.main`. |
 | `tests/` | Pytest suite; deterministic, no network, no live keys. |
 
@@ -59,13 +70,18 @@ advisory.
    prompts within budget by chunking and scoring report evidence.
 3. **Research debate** — bull and bear researchers argue over the reports
    for N rounds; the research manager judges and writes an investment plan.
-4. **Execution chain** — the trader turns the plan into a proposal; the
+4. **Options overlay** (when enabled) — the Options Strategist turns the
+   Trader's direction into a defined-risk structure and the risk gate
+   approves or vetoes it from live quotes. The result lands in state as
+   `options_strategy_report` and `options_trade_plan`.
+5. **Execution chain** — the trader turns the plan into a proposal; the
    risky/safe/neutral risk debate stress-tests it; the risk manager issues
    the final decision plus a typed `TradeIntent`.
-5. **Signal + execution** — `SignalProcessor` extracts the executable
+6. **Signal + execution** — `SignalProcessor` extracts the executable
    action. If auto-trading is on, the WebUI executes it via
-   `AlpacaUtils.execute_trade_intent` / `execute_trading_action`.
-6. **Decision log** — the completed decision is appended to a markdown
+   `AlpacaUtils.execute_trade_intent` / `execute_trading_action`, then
+   submits any gate-approved options plan via `submit_options_plan`.
+7. **Decision log** — the completed decision is appended to a markdown
    memory log as `pending`, and resolved later with realized returns and a
    reflection once the outcome is known.
 
@@ -110,10 +126,11 @@ on the paper API — never develop against live trading.
 - On Windows, ChromaDB keeps store files open: use
   `TemporaryDirectory(ignore_cleanup_errors=True)` in tests.
 
-## Integrated contribution set
+## Upstream provenance
 
-These reviewed contributions were integrated together because several are
-stacked and share execution, configuration, and WebUI paths:
+The base this project forked from integrated the following reviewed
+contributions. They are listed for provenance — the links point at the
+upstream repository, not this one:
 
 | PR | Adds |
 |---|---|
