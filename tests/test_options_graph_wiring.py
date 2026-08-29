@@ -120,6 +120,54 @@ class OptionsStatePropagationTests(unittest.TestCase):
         self.assertIn("options_trade_plan", state)
 
 
+class AccountSnapshotTests(unittest.TestCase):
+    """The options gate sizes every position off account equity."""
+
+    def test_get_account_info_exposes_equity(self):
+        """Regression: equity was absent, so the gate always saw 0.
+
+        With equity 0 the max-allowed-loss allowance is 0, and every options
+        trade is vetoed - the agent looks like it is running and never trades.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+
+        account = MagicMock()
+        account.buying_power = "50000"
+        account.cash = "25000"
+        account.equity = "100000"
+        account.last_equity = "99000"
+        account.portfolio_value = "100000"
+        client = MagicMock()
+        client.get_account.return_value = account
+
+        with patch(
+            "tradingagents.dataflows.alpaca_utils.get_alpaca_trading_client",
+            return_value=client,
+        ):
+            info = AlpacaUtils.get_account_info()
+
+        self.assertEqual(info["equity"], 100000.0)
+        self.assertEqual(info["daily_change_dollars"], 1000.0)
+
+    def test_gate_allowance_is_nonzero_for_a_funded_account(self):
+        """End-to-end: a funded account must produce a real loss allowance."""
+        from unittest.mock import MagicMock, patch
+
+        from tradingagents.agents import options_strategist
+
+        with patch.object(options_strategist, "AlpacaUtils") as alpaca:
+            alpaca.get_account_info.return_value = {
+                "equity": 100000.0, "buying_power": 100000.0, "cash": 50000.0,
+            }
+            alpaca.get_positions_data.return_value = []
+            snapshot = options_strategist._build_account_snapshot()
+
+        self.assertEqual(snapshot["equity"], 100000.0)
+        self.assertGreater(snapshot["equity"] * 0.02, 0)
+
+
 class OptionsConfigTests(unittest.TestCase):
     def test_options_config_keys_exist(self):
         for key in (

@@ -8,7 +8,7 @@
 
 <div align="center">
 
-🚀 [Enhanced Features](#enhanced-features) | 📐 [Options Alpha](#options-alpha-autonomous-defined-risk-options-overlay) | ⚡ [Installation & Setup](#installation-and-setup) | 📦 [Package Usage](#alpacatradingagent-package) | 🌐 [Web Interface](#web-ui-usage) | 📖 [Complete Guide](#complete-guide) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
+🚀 [Enhanced Features](#enhanced-features) | 🖥️ [The App](#the-app-dashboard-and-trading-desk-ui) | 📐 [Options Alpha](#options-alpha-autonomous-defined-risk-options-overlay) | ⚡ [Installation & Setup](#installation-and-setup) | 📦 [Package Usage](#alpacatradingagent-package) | 🌐 [Web Interface](#web-ui-usage) | 📖 [Complete Guide](#complete-guide) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
 
 ⏱️ New here? **[QUICKSTART.md](QUICKSTART.md)** — first analysis in ~5 minutes · 🏗️ **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the pipeline works inside
 
@@ -100,6 +100,53 @@ Our enhanced framework decomposes complex trading tasks into specialized roles w
 
 ### Risk Management and Portfolio Manager
 - Continuously evaluates portfolio risk across stocks and crypto assets. Monitors margin requirements, position sizes, and overall portfolio exposure. Provides real-time risk assessment and position management through the Alpaca integration.
+
+## The App: Dashboard and Trading Desk UI
+
+The Web UI is a navigable application, not a single scrolling page. A fixed
+sidebar routes between seven workspaces; a sticky top bar keeps live account
+equity, day P/L, buying power, market status, and the paper/live badge visible
+from every page.
+
+| Workspace | What it is for |
+| --- | --- |
+| **Dashboard** | Live KPIs, allocation donut, agent pipeline, positions, options overlay, decisions, orders |
+| **Run Analysis** | Configure the agent team, symbols, research depth, and launch a run |
+| **Agent Reports** | Full audit trail — one tab per agent, including the Options tab |
+| **Options Desk** | Proposals, risk-gate verdicts, open contracts, and IV history |
+| **Positions & Orders** | Live Alpaca positions, order history, account detail |
+| **Backtest** | Replay strategies over historical data |
+| **Settings** | API credentials, safety guardrails, LLM cost monitor |
+
+### Dashboard
+
+Six KPI tiles (equity, day P/L, open P/L, buying power, gross exposure, options
+positions), a portfolio allocation donut that labels short legs as short, a live
+**agent pipeline** grouped by stage that shows exactly which agent is running,
+and tables for positions, decisions, and recent orders. Options positions are
+detected by OCC symbol and tagged `OPT LONG` / `OPT SHORT` so a short leg is
+never displayed as another long.
+
+### Options Desk
+
+The page built for interrogation. Alongside the model's proposal it shows the
+**risk gate's own recomputed numbers** — worst case, risk-sized loss, net
+premium, collateral — plus a live list of the gate rules currently in force. The
+separation between what the LLM suggested and what arithmetic verified is
+visible on screen rather than asserted in a README.
+
+### Design notes
+
+- **State is honest.** When Alpaca is not connected the UI says so and points at
+  Settings. It never renders a confident `$0.00`, which is what the risk gate's
+  deliberate fail-closed zeros would otherwise look like.
+- **Navigation preserves state.** Pages are hidden rather than unmounted, so a
+  run in progress keeps streaming while you move between workspaces.
+- **No hard CDN dependency for layout.** The shell, grid, tables, and tab strip
+  are styled by the app's own stylesheet, so the layout survives a slow or
+  blocked CDN rather than collapsing into unstyled markup.
+- **Responsive.** Below 860px the sidebar collapses to an icon rail and panels
+  reflow to a single column.
 
 ## Options Alpha: Autonomous Defined-Risk Options Overlay
 

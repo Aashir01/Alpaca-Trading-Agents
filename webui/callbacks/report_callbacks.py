@@ -998,44 +998,6 @@ def register_report_callbacks(app):
         symbol = symbols_list[active_page - 1]
         return f"📊 {symbol}"
 
-    @app.callback(
-        Output("tabs", "active_tab"),
-        [Input("nav-market", "n_clicks"),
-         Input("nav-social", "n_clicks"),
-         Input("nav-news", "n_clicks"),
-         Input("nav-fundamentals", "n_clicks"),
-         Input("nav-researcher", "n_clicks"),
-         Input("nav-research-mgr", "n_clicks"),
-         Input("nav-trader", "n_clicks"),
-         Input("nav-risk-agg", "n_clicks"),
-         Input("nav-risk-cons", "n_clicks"),
-         Input("nav-risk-neut", "n_clicks"),
-         Input("nav-final", "n_clicks")]
-    )
-    def switch_tab(*args):
-        """Switch between tabs based on navigation clicks"""
-        ctx = dash.callback_context
-        if not ctx.triggered:
-            return "market-analysis"
-        
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        tab_mapping = {
-            "nav-market": "market-analysis",
-            "nav-social": "social-sentiment", 
-            "nav-news": "news-analysis",
-            "nav-fundamentals": "fundamentals-analysis",
-            "nav-researcher": "researcher-debate",
-            "nav-research-mgr": "research-manager",
-            "nav-trader": "trader-plan",
-            "nav-risk-agg": "risk-debate",
-            "nav-risk-cons": "risk-debate", 
-            "nav-risk-neut": "risk-debate",
-            "nav-final": "final-decision"
-        }
-        
-        return tab_mapping.get(trigger_id, "market-analysis")
-
     # Prompt Modal Callbacks
     @app.callback(
         [Output("prompt-modal", "is_open"),
