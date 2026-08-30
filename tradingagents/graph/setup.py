@@ -1,17 +1,16 @@
 # TradingAgents/graph/setup.py
 
 import concurrent.futures
-import threading
 import copy
 import time
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph, START
 from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents import *
 from tradingagents.agents.analysts.macro_analyst import create_macro_analyst
+from tradingagents.agents.options_strategist import create_options_strategist
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.utils.agent_utils import Toolkit
 from tradingagents.agents.utils.report_context import create_report_context_node
@@ -97,6 +96,7 @@ class GraphSetup:
                 "trader_investment_plan",
                 "final_trade_decision",
                 "final_trade_intent",
+                "options_strategy_report",
             ]
             for output_key in output_keys:
                 output_value = result.get(output_key)
@@ -602,6 +602,18 @@ class GraphSetup:
                 self.deep_thinking_llm, self.risk_manager_memory, self.config
             ),
         )
+        # Options Strategist sits between the Trader and the risk debate: it
+        # reads the Trader's directional signal and turns it into a defined-risk
+        # options structure, which the risk debate then argues over alongside
+        # the equity decision.
+        options_enabled = bool(self.config.get("options_trading_enabled", False))
+        options_strategist_node = None
+        if options_enabled:
+            options_strategist_node = self._wrap_node_with_run_logging(
+                "Options Strategist",
+                create_options_strategist(self.deep_thinking_llm, self.config),
+            )
+
         parallel_risk_round_one_mode = self.config.get("parallel_risk_first_round", True)
 
         # Create workflow
@@ -705,8 +717,18 @@ class GraphSetup:
             },
         )
         workflow.add_edge("Research Manager", "Trader")
+
+        # Entry point of the risk debate; the options node is spliced in front
+        # of it when options trading is enabled.
+        risk_entry = "Parallel Risk Round 1" if parallel_risk_round_one_mode else "Risky Analyst"
+        if options_enabled:
+            workflow.add_node("Options Strategist", options_strategist_node)
+            workflow.add_edge("Trader", "Options Strategist")
+            workflow.add_edge("Options Strategist", risk_entry)
+
         if parallel_risk_round_one_mode:
-            workflow.add_edge("Trader", "Parallel Risk Round 1")
+            if not options_enabled:
+                workflow.add_edge("Trader", "Parallel Risk Round 1")
             workflow.add_conditional_edges(
                 "Parallel Risk Round 1",
                 self.conditional_logic.should_continue_risk_analysis,
@@ -717,7 +739,7 @@ class GraphSetup:
                     "Risk Judge": "Risk Judge",
                 },
             )
-        else:
+        elif not options_enabled:
             workflow.add_edge("Trader", "Risky Analyst")
         workflow.add_conditional_edges(
             "Risky Analyst",

@@ -9,7 +9,7 @@ Two trading modes supported:
 2. Trading Mode (allow_shorts=True): LONG/NEUTRAL/SHORT actions with position logic
 """
 
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from tradingagents.prompts import render_prompt
 
 

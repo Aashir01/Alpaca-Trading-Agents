@@ -9,3 +9,13 @@ eval_data/
 .env
 data/
 data_cache/
+.idea/
+.vscode/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Timestamped .env backups — these contain live keys
+.env.bak.*
+.env.backup*

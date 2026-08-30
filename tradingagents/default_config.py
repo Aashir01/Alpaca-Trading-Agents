@@ -1,6 +1,34 @@
 import os
 
+from dotenv import load_dotenv
+
+# This module reads its defaults from the environment at import time, so .env
+# has to be on the environment *before* the dict below is built. Loading it in
+# tradingagents.dataflows.config is not enough: whichever module imports first
+# wins, and when default_config lost that race every documented .env setting
+# (LLM_PROVIDER, the OPTIONS_* guardrails, the directory overrides) was silently
+# ignored in favour of the hardcoded fallbacks. load_dotenv() never overrides a
+# variable that is already set, so a real environment variable still wins.
+load_dotenv()
+
 _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_num(name: str, default, cast):
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return cast(raw.strip())
+    except ValueError:
+        return default
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
@@ -38,9 +66,12 @@ DEFAULT_CONFIG = {
     ),
     # LLM settings
     "llm_provider": os.getenv("LLM_PROVIDER", "openai"),
-    "deep_think_llm": "gpt-5.4-mini",
-    "quick_think_llm": "gpt-5.4-nano",
-    "backend_url": None,
+    # Model names are overridable so a non-OpenAI provider (Ollama, vLLM, or a
+    # hosted OpenAI-compatible endpoint) can be driven entirely from .env,
+    # without editing source. The defaults stay OpenAI's.
+    "deep_think_llm": os.getenv("DEEP_THINK_LLM", "gpt-5.4-mini"),
+    "quick_think_llm": os.getenv("QUICK_THINK_LLM", "gpt-5.4-nano"),
+    "backend_url": os.getenv("LLM_BACKEND_URL") or None,
     "google_thinking_level": None,
     "openai_reasoning_effort": None,
     "anthropic_effort": None,
@@ -163,6 +194,15 @@ DEFAULT_CONFIG = {
     "google_news_max_pages": 3,  # Google News pages fetched before dedupe/limit
     "google_news_max_items": 18,  # Max deduped Google News items returned to analysts
     "openai_store_responses": False,  # Disable response storing by default to reduce latency/payload
+    # Options trading (Options Alpha overlay)
+    "options_trading_enabled": _env_bool("OPTIONS_TRADING_ENABLED", False),  # Master switch for the Options Strategist node and options execution
+    "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
+    "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
+    "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
+    "options_max_spread_pct": _env_num("OPTIONS_MAX_SPREAD_PCT", 20.0, float),  # Max bid-ask spread as % of mid before a leg is rejected as illiquid
+    "options_stress_move_pct": _env_num("OPTIONS_STRESS_MOVE_PCT", 20.0, float),  # Adverse move below the short strike used to size collateralized shorts
+    "options_max_contracts": _env_num("OPTIONS_MAX_CONTRACTS", 1, int),  # Spread units per trade; the gate still has final say
+    "options_min_iv_history_days": _env_num("OPTIONS_MIN_IV_HISTORY_DAYS", 20, int),  # Below this, IV rank is reported but not used as a selection rule
     # API keys (these will be overridden by environment variables if present)
     "openai_api_key": None,
     "openai_use_local": False,  # Route core LLM calls to a local OpenAI-compatible endpoint

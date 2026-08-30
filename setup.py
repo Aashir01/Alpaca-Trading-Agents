@@ -1,5 +1,5 @@
 """
-Setup script for the TradingAgents package.
+Setup script for the Options Alpha trading agent package.
 """
 
 from setuptools import setup, find_namespace_packages
@@ -7,10 +7,12 @@ from setuptools import setup, find_namespace_packages
 setup(
     name="tradingagents",
     version="0.1.0",
-    description="Auditable multi-agent trading research framework for paper trading, strategy testing, and risk-controlled execution",
-    author="TradingAgents Team",
-    author_email="yijia.xiao@cs.ucla.edu",
-    url="https://github.com/TauricResearch",
+    description=(
+        "Autonomous multi-agent options trading desk on Alpaca: LLM agents propose "
+        "defined-risk structures, a deterministic risk gate prices and vetoes them"
+    ),
+    author="Aashir",
+    url="https://github.com/Aashir01/Alpaca-Trading-Agents",
     packages=find_namespace_packages(include=["tradingagents*", "cli*", "webui*"]),
     include_package_data=True,
     package_data={
@@ -42,7 +44,6 @@ setup(
     entry_points={
         "console_scripts": [
             "tradingagents=cli.main:app",
-            "tradingagents-web=web_ui:main",
         ],
     },
     classifiers=[

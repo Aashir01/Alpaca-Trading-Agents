@@ -3,11 +3,10 @@ Report-related callbacks for TradingAgents WebUI
 Enhanced with symbol-based pagination
 """
 
-from dash import Input, Output, State, ctx, html, ALL, dash, dcc, callback_context
+from dash import Input, Output, State, ctx, html, ALL, dash, dcc
 import dash_bootstrap_components as dbc
 import re
 from webui.utils.state import app_state
-from webui.components.ui import render_researcher_debate, render_risk_debate
 from webui.utils.report_validator import validate_reports_for_ui
 from webui.utils.prompt_capture import get_agent_prompt
 from webui.utils.report_rendering import create_rich_report_content
@@ -218,6 +217,64 @@ def create_markdown_content(content, default_message="No content available yet."
         ])
     
     return report_component
+
+
+def _format_usd(value):
+    try:
+        return f"${float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _build_options_tab_markdown(state, reports):
+    """Render the Options tab: what was proposed, what the gate said, what shipped.
+
+    The strategist's own report covers the proposal and the gate verdict. This
+    adds the execution outcome so the tab answers "did an order actually reach
+    Alpaca, and at what price?" without leaving the UI.
+    """
+    report = reports.get("options_strategy_report")
+    if not report:
+        return (
+            "No options strategy available yet.\n\n"
+            "The Options Strategist runs between the Trader and the risk debate when "
+            "`OPTIONS_TRADING_ENABLED=True`."
+        )
+
+    sections = [report]
+
+    plan = state.get("options_trade_plan") or {}
+    gate = plan.get("gate_result") or {}
+    if gate:
+        sections.append(
+            "\n---\n\n### Risk Gate (recomputed from live quotes)\n\n"
+            f"- Worst case: **{_format_usd(gate.get('max_loss_usd'))}**\n"
+            f"- Risk-sized loss: **{_format_usd(gate.get('stress_loss_usd'))}**\n"
+            f"- Net premium per spread: **{_format_usd(gate.get('net_credit_debit'))}**"
+            f"{' (credit)' if (gate.get('net_credit_debit') or 0) < 0 else ' (debit)'}\n"
+            f"- Collateral required: **{_format_usd(gate.get('collateral_required'))}**"
+        )
+
+    execution = state.get("options_results")
+    if execution:
+        if execution.get("submitted"):
+            sections.append(
+                "\n---\n\n### Execution\n\n"
+                f"- Status: **Submitted**\n"
+                f"- Order ID: `{execution.get('order_id')}`\n"
+                f"- Limit price (from live mid, not the model): "
+                f"**{_format_usd(execution.get('limit_price'))}** per share\n"
+                f"- Model's own estimate, for comparison: "
+                f"{_format_usd(execution.get('model_estimate'))}"
+            )
+        else:
+            sections.append(
+                "\n---\n\n### Execution\n\n"
+                f"- Status: **Not submitted**\n"
+                f"- Reason: {execution.get('error') or 'unknown'}"
+            )
+
+    return "\n".join(sections)
 
 
 def register_report_callbacks(app):
@@ -738,6 +795,7 @@ def register_report_callbacks(app):
          Output("macro-analysis-tab-content", "children"),
          Output("research-manager-tab-content", "children"),
          Output("trader-plan-tab-content", "children"),
+         Output("options-strategy-tab-content", "children"),
          Output("final-decision-tab-content", "children")],
         [Input("report-pagination", "active_page"),
          Input("medium-refresh-interval", "n_intervals")]
@@ -748,12 +806,12 @@ def register_report_callbacks(app):
         
         if not app_state.symbol_states or not active_page:
             # print(f"[REPORTS] No symbol states or no active page, returning default content")
-            return [create_markdown_content("", "No analysis available yet.")] * 8
+            return [create_markdown_content("", "No analysis available yet.")] * 9
         
         # Safeguard against accessing invalid page index (e.g., after page refresh)
         symbols_list = list(app_state.symbol_states.keys())
         if active_page > len(symbols_list):
-            return [create_markdown_content("", "Page index out of range. Please refresh or restart analysis.")] * 8
+            return [create_markdown_content("", "Page index out of range. Please refresh or restart analysis.")] * 9
         
         symbol = symbols_list[active_page - 1]
         # print(f"[REPORTS] Selected symbol: {symbol} (page {active_page})")
@@ -816,6 +874,9 @@ def register_report_callbacks(app):
         research_manager_report = reports.get("research_manager_report") or "No research manager decision available yet."
         trader_report = reports.get("trader_investment_plan") or "No trader report available yet."
         
+        # Options tab: the strategist's report plus what execution actually did.
+        options_report = _build_options_tab_markdown(state, reports)
+
         # Final Decision tab shows the Portfolio Manager Decision
         portfolio_report = reports.get("final_trade_decision") or "No final decision available yet."
         
@@ -827,6 +888,7 @@ def register_report_callbacks(app):
             create_markdown_content(macro_report, "No macro analysis available yet.", "macro_report"),
             create_markdown_content(research_manager_report, "No research manager decision available yet.", "research_manager_report"),
             create_markdown_content(trader_report, "No trader report available yet.", "trader_investment_plan"),
+            create_markdown_content(options_report, "No options strategy available yet.", "options_strategy_report"),
             create_markdown_content(portfolio_report, "No final decision available yet.", "final_trade_decision")
         )
 
@@ -935,44 +997,6 @@ def register_report_callbacks(app):
         
         symbol = symbols_list[active_page - 1]
         return f"📊 {symbol}"
-
-    @app.callback(
-        Output("tabs", "active_tab"),
-        [Input("nav-market", "n_clicks"),
-         Input("nav-social", "n_clicks"),
-         Input("nav-news", "n_clicks"),
-         Input("nav-fundamentals", "n_clicks"),
-         Input("nav-researcher", "n_clicks"),
-         Input("nav-research-mgr", "n_clicks"),
-         Input("nav-trader", "n_clicks"),
-         Input("nav-risk-agg", "n_clicks"),
-         Input("nav-risk-cons", "n_clicks"),
-         Input("nav-risk-neut", "n_clicks"),
-         Input("nav-final", "n_clicks")]
-    )
-    def switch_tab(*args):
-        """Switch between tabs based on navigation clicks"""
-        ctx = dash.callback_context
-        if not ctx.triggered:
-            return "market-analysis"
-        
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        
-        tab_mapping = {
-            "nav-market": "market-analysis",
-            "nav-social": "social-sentiment", 
-            "nav-news": "news-analysis",
-            "nav-fundamentals": "fundamentals-analysis",
-            "nav-researcher": "researcher-debate",
-            "nav-research-mgr": "research-manager",
-            "nav-trader": "trader-plan",
-            "nav-risk-agg": "risk-debate",
-            "nav-risk-cons": "risk-debate", 
-            "nav-risk-neut": "risk-debate",
-            "nav-final": "final-decision"
-        }
-        
-        return tab_mapping.get(trigger_id, "market-analysis")
 
     # Prompt Modal Callbacks
     @app.callback(

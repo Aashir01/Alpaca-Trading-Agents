@@ -5,8 +5,6 @@ Enhanced with symbol-based pagination
 
 from dash import Input, Output, State, ctx, html, ALL, dash
 import dash_bootstrap_components as dbc
-import pandas as pd
-import plotly.graph_objects as go
 from datetime import datetime
 
 from webui.utils.state import app_state

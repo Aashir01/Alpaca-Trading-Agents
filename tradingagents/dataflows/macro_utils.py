@@ -1,10 +1,8 @@
 import requests
-import json
 from datetime import datetime, timedelta
-from typing import Annotated, Dict, List, Optional
-from .config import get_api_key, DATA_DIR
+from typing import Dict
+from .config import get_api_key
 import os
-import pandas as pd
 
 
 def get_fred_api_key():

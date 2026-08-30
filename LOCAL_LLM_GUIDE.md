@@ -1,5 +1,5 @@
 """
-How to Run AlpacaTradingAgent with a Local LLM
+How to Run Options Alpha with a Local LLM
 
 This project can route the graph's quick/deep thinker LLM calls to an
 OpenAI-compatible local endpoint such as LM Studio, Ollama, or vLLM.

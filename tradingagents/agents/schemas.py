@@ -179,6 +179,79 @@ class RiskDecision(BaseModel):
     time_horizon: Optional[str] = Field(default=None, description="Expected holding period or review window.")
 
 
+class OptionsStrategy(str, Enum):
+    """Defined-risk options structures the strategist is allowed to propose."""
+
+    NONE = "none"
+    LONG_CALL = "long_call"
+    LONG_PUT = "long_put"
+    BULL_CALL_SPREAD = "bull_call_spread"
+    BEAR_PUT_SPREAD = "bear_put_spread"
+    BULL_PUT_SPREAD = "bull_put_spread"
+    BEAR_CALL_SPREAD = "bear_call_spread"
+    IRON_CONDOR = "iron_condor"
+    CASH_SECURED_PUT = "cash_secured_put"
+    COVERED_CALL = "covered_call"
+
+
+class OptionsLeg(BaseModel):
+    """A single contract leg of an options structure."""
+
+    symbol: str = Field(description="OCC option symbol, e.g. AAPL250117C00150000.")
+    side: str = Field(description="buy or sell.")
+    ratio_qty: int = Field(default=1, ge=1, description="Contracts per spread unit for this leg.")
+    strike: Optional[float] = Field(default=None, description="Strike price in dollars.")
+    expiry: Optional[str] = Field(default=None, description="Expiration date as YYYY-MM-DD.")
+    option_type: Optional[str] = Field(default=None, description="call or put.")
+
+
+class OptionsStrategyProposal(BaseModel):
+    """An options structure proposed by the Options Strategist LLM.
+
+    Every number the model supplies here is advisory. The risk gate recomputes
+    net premium and max loss from live bid/ask before an order is priced or
+    sized, so a hallucinated estimate can never reach the broker.
+    """
+
+    strategy: OptionsStrategy = Field(description="Which defined-risk structure to use.")
+    symbol: str = Field(description="Underlying ticker.")
+    direction: str = Field(description="bullish, bearish, or neutral.")
+    legs: list[OptionsLeg] = Field(
+        default_factory=list, description="Contract legs; empty only when strategy is 'none'."
+    )
+    rationale: str = Field(default="", description="Why this structure fits the current IV and directional read.")
+    max_loss_estimate: Optional[float] = Field(
+        default=None, description="Model's own max-loss estimate in dollars (advisory only)."
+    )
+    expected_credit_debit: Optional[float] = Field(
+        default=None, description="Model's own net premium per share (advisory only)."
+    )
+    iv_rank_used: Optional[float] = Field(default=None, description="IV rank the model reasoned from.")
+    days_to_earnings: Optional[int] = Field(default=None, description="Days to next earnings the model reasoned from.")
+
+
+class RiskGateResult(BaseModel):
+    """Deterministic verdict from the options risk gate."""
+
+    approved: bool
+    reasons: list[str] = Field(default_factory=list, description="Veto reasons; empty when approved.")
+    max_loss_usd: Optional[float] = Field(
+        default=None,
+        description="Honest worst-case loss for the full position, including assignment-to-zero on a cash-secured put.",
+    )
+    stress_loss_usd: Optional[float] = Field(
+        default=None,
+        description="Loss used for equity-percentage sizing; equals max_loss_usd for defined-risk structures.",
+    )
+    net_credit_debit: Optional[float] = Field(
+        default=None,
+        description="Net premium per spread unit recomputed from live mid; positive debit, negative credit.",
+    )
+    collateral_required: Optional[float] = Field(
+        default=None, description="Collateral required for the full position."
+    )
+
+
 def _rating_line(rating: Optional[AdvisoryRating]) -> list[str]:
     return ["", f"**Advisory Rating**: {rating.value}"] if rating else []
 

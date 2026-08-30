@@ -1,6 +1,4 @@
 import functools
-import time
-import json
 from langchain_core.messages import AIMessage
 from ..schemas import TraderProposal, render_trader_proposal
 from ..utils.agent_trading_modes import (

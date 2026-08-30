@@ -1,4 +1,3 @@
-from typing import Optional
 import datetime
 import typer
 from rich.console import Console
@@ -12,18 +11,14 @@ from rich.text import Text
 from rich.live import Live
 from rich.table import Table
 from collections import deque
-import time
-from rich.tree import Tree
 from rich import box
 from rich.align import Align
-from rich.rule import Rule
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.graph.checkpointer import clear_checkpoint
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.run_logger import get_run_audit_logger
 from tradingagents.agents.schemas import trade_intent_action
-from cli.models import AnalystType
 from cli.utils import *
 
 console = Console()
@@ -199,10 +194,10 @@ def update_display(layout, spinner_text=None):
     # Header with welcome message
     layout["header"].update(
         Panel(
-            "[bold green]Welcome to AlpacaTradingAgent CLI[/bold green]\n"
+            "[bold green]Welcome to the Options Alpha CLI[/bold green]\n"
             "[dim]Auditable multi-agent trading research framework[/dim]\n"
             "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
-            title="Welcome to AlpacaTradingAgent",
+            title="Welcome to Options Alpha",
             border_style="green",
             padding=(1, 2),
             expand=True,
@@ -392,7 +387,7 @@ def get_user_selections():
 
     # Create welcome box content
     welcome_content = f"{welcome_ascii}\n"
-    welcome_content += "[bold green]AlpacaTradingAgent: Auditable Multi-Agent Trading Research Framework - CLI[/bold green]\n\n"
+    welcome_content += "[bold green]Options Alpha: Autonomous Multi-Agent Options Trading on Alpaca - CLI[/bold green]\n\n"
     welcome_content += "[bold]Workflow Steps:[/bold]\n"
     welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
     welcome_content += (
@@ -404,7 +399,7 @@ def get_user_selections():
         welcome_content,
         border_style="green",
         padding=(1, 2),
-        title="Welcome to AlpacaTradingAgent",
+        title="Welcome to Options Alpha",
         subtitle="Paper trading, strategy testing, and risk-controlled execution",
     )
     console.print(Align.center(welcome_box))

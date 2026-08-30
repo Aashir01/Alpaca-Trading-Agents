@@ -28,7 +28,7 @@ def register_status_callbacks(app):
             "Analyst Team": getattr(app_state, 'active_analysts', []),
             "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
             "Trading Team": ["Trader"],
-            "Risk Management": ["Risky Analyst", "Safe Analyst", "Neutral Analyst", "Portfolio Manager"]
+            "Risk Management": ["Options Strategist", "Risky Analyst", "Safe Analyst", "Neutral Analyst", "Portfolio Manager"]
         }
         
         # Create table header
@@ -125,7 +125,6 @@ def register_status_callbacks(app):
                 # Format next execution time
                 try:
                     from webui.utils.market_hours import get_next_market_datetime
-                    import datetime
                     
                     next_times = []
                     for hour in app_state.market_hours:
@@ -146,6 +145,11 @@ def register_status_callbacks(app):
             else:
                 status_msg = f"⏳ Loop mode - Waiting for next iteration ({app_state.loop_interval_minutes} min intervals)"
                 status_class = "text-info mt-2"
+        elif getattr(app_state, "last_error", None) and not app_state.analysis_running:
+            # A run that failed before the graph started leaves every agent on
+            # PENDING; say why rather than looking like it is still working.
+            status_msg = f"❌ Analysis stopped: {app_state.last_error}"
+            status_class = "text-danger mt-2"
         else:
             status_msg = (
                 "🔄 Auto-refreshing during analysis" if app_state.analysis_running else "🔄 Finalizing results"

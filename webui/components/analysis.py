@@ -212,6 +212,117 @@ def execute_trade_after_analysis(ticker, allow_shorts, trade_amount):
             state["trading_results"] = {"error": f"Trading execution error: {str(e)}"}
 
 
+def execute_options_plan_after_analysis(ticker, recommended_action):
+    """Submit the gate-approved options plan for ``ticker``, if there is one.
+
+    The options overlay is deliberately separate from the equity order: the
+    Options Strategist proposes off the Trader's signal, and the executor
+    re-runs the same risk gate against the final risk-adjusted action before
+    anything reaches the broker. A plan whose direction no longer matches is
+    dropped rather than submitted.
+    """
+    from tradingagents.dataflows.config import get_config
+
+    config = get_config() or {}
+    if not config.get("options_trading_enabled", False):
+        return
+
+    state = app_state.get_state(ticker)
+    if not state:
+        return
+
+    analysis_results = state.get("analysis_results") or {}
+    full_state = analysis_results.get("full_state") or {}
+    plan = full_state.get("options_trade_plan")
+    if not plan:
+        print(f"[OPTIONS] No gate-approved options plan for {ticker}; nothing to submit")
+        return
+
+    print(f"[OPTIONS] Submitting {plan.get('strategy')} for {ticker}")
+    try:
+        from tradingagents.execution import submit_options_plan
+
+        result = submit_options_plan(
+            plan,
+            final_action=recommended_action,
+            qty=int(config.get("options_max_contracts", 1)),
+            max_loss_pct=float(config.get("options_max_loss_pct", 2.0)),
+            max_spread_pct=float(config.get("options_max_spread_pct", 20.0)),
+            stress_move_pct=float(config.get("options_stress_move_pct", 20.0)),
+        )
+    except Exception as exc:
+        print(f"[OPTIONS] Options execution error for {ticker}: {exc}")
+        state["options_results"] = {"error": f"Options execution error: {exc}"}
+        return
+
+    state["options_results"] = result
+    if result.get("submitted"):
+        print(
+            f"[OPTIONS] Submitted {plan.get('strategy')} for {ticker} "
+            f"(order {result.get('order_id')}, limit {result.get('limit_price')})"
+        )
+        app_state.signal_trade_occurred()
+    else:
+        print(f"[OPTIONS] Not submitted for {ticker}: {result.get('error')}")
+
+    try:
+        get_run_audit_logger().log_event(
+            event_type="options_execution",
+            symbol=ticker,
+            payload=result,
+        )
+    except Exception as exc:
+        print(f"[OPTIONS] Could not write options audit entry: {exc}")
+
+
+def _preflight_models(config):
+    """Fail fast when a configured model is not served by the endpoint.
+
+    Without this the run starts and every agent 404s in turn. The analysts
+    still report COMPLETED (their failure is caught and written into the
+    report body), the graph then stalls at the first researcher, and the UI
+    sits on PENDING with nothing to explain why. One cheap call per distinct
+    model turns that dead end into an actionable message.
+    """
+    provider = (config.get("llm_provider") or "openai").lower()
+    if provider not in ("openai", "local_openai"):
+        return
+
+    import os
+
+    from openai import OpenAI
+
+    base_url = config.get("backend_url") or os.getenv("OPENAI_BASE_URL") or None
+    api_key = os.getenv("OPENAI_API_KEY") or ("local-llm" if provider == "local_openai" else None)
+    if not api_key:
+        return
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    endpoint = base_url or "https://api.openai.com/v1"
+    for role in ("quick_think_llm", "deep_think_llm"):
+        model = config.get(role)
+        if not model:
+            continue
+        try:
+            client.chat.completions.create(
+                model=model, max_tokens=1, messages=[{"role": "user", "content": "ping"}]
+            )
+        except Exception as exc:
+            if "model_not_found" in str(exc) or "does not exist" in str(exc):
+                raise ValueError(
+                    f"Model '{model}' is not available at {endpoint}. "
+                    f"Set it to a model that endpoint actually serves "
+                    f"(DEEP_THINK_LLM / QUICK_THINK_LLM in .env, or the "
+                    f"custom-model box on this page). Note that model ids are "
+                    f"provider-specific: an Ollama tag like 'qwen3:latest' is "
+                    f"not valid on a hosted endpoint, which expects a full id "
+                    f"such as 'Qwen/Qwen2.5-72B-Instruct'."
+                ) from exc
+            # Anything else (auth, network, rate limit) is left to surface
+            # naturally during the run rather than blocking it here.
+            return
+
+
 def run_analysis(
     ticker,
     selected_analysts,
@@ -251,6 +362,7 @@ def run_analysis(
             return
         current_state["analysis_running"] = True
         current_state["analysis_complete"] = False
+        app_state.last_error = None
 
         # Handle both new dict format and legacy integer format
         if isinstance(research_depth_config, dict):
@@ -281,6 +393,9 @@ def run_analysis(
         for key, value in (provider_settings or {}).items():
             if value not in (None, ""):
                 config[key] = value
+
+        # Verify the models exist before spinning up the graph.
+        _preflight_models(config)
 
         # Initialize TradingAgentsGraph
         print(f"Initializing TradingAgentsGraph with analysts: {selected_analysts}")
@@ -378,6 +493,10 @@ def run_analysis(
         # NEW: Persist the extracted decision so the trading engine can act on it directly
         current_state["recommended_action"] = decision
         current_state["final_trade_intent"] = trade_intent
+        current_state["current_reports"]["options_strategy_report"] = final_state.get(
+            "options_strategy_report"
+        )
+        current_state["options_trade_plan"] = final_state.get("options_trade_plan")
 
         # Mark all agents as completed
         for agent in current_state["agent_statuses"]:
@@ -408,6 +527,7 @@ def run_analysis(
         if trade_enabled:
             print(f"[TRADE] Trading enabled for {ticker}, executing trade with ${trade_amount}")
             execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
+            execute_options_plan_after_analysis(ticker, decision)
         else:
             print(f"[TRADE] Trading disabled for {ticker}, skipping trade execution")
 
@@ -416,6 +536,8 @@ def run_analysis(
 
     except Exception as e:
         print(f"Analysis error: {e}")
+        app_state.last_error = str(e)
+        app_state.needs_ui_update = True
         import traceback
         traceback.print_exc()
         if run_started:

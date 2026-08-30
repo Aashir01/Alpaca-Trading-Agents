@@ -1,22 +1,18 @@
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage
-from typing import List
 from typing import Annotated
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import RemoveMessage
 from langchain_core.tools import tool
-from datetime import date, timedelta, datetime
-import functools
-import pandas as pd
+from datetime import datetime
 import os
-from dateutil.relativedelta import relativedelta
-from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.run_logger import get_run_audit_logger
 from tradingagents.dataflows.config import get_api_key
-import json
 import time
 from functools import wraps
+from tradingagents.console_encoding import ensure_utf8_console, safe_print
+
+ensure_utf8_console()
+
 
 
 TOOL_MIN_OUTPUT_CHARS = {
@@ -263,7 +259,7 @@ def timing_wrapper(analyst_type, timeout_seconds=120, uses_web_search=False):
                 else:
                     input_summary[key] = value
 
-            print(f"[{analyst_type}] 🔧 Starting tool '{tool_name}' with inputs: {input_summary}")
+            safe_print(f"[{analyst_type}] 🔧 Starting tool '{tool_name}' with inputs: {input_summary}")
             
             # Notify the state management system of tool call execution
             try:
@@ -314,7 +310,7 @@ def timing_wrapper(analyst_type, timeout_seconds=120, uses_web_search=False):
                             f"TIMEOUT: Tool '{tool_name}' exceeded {effective_timeout_seconds:.1f}s "
                             f"limit (stopped at {elapsed:.1f}s)"
                         )
-                        print(f"[{analyst_type}] ⏰ {timeout_msg}")
+                        safe_print(f"[{analyst_type}] ⏰ {timeout_msg}")
 
                         tool_call_info = {
                             "timestamp": timestamp,
@@ -357,7 +353,7 @@ def timing_wrapper(analyst_type, timeout_seconds=120, uses_web_search=False):
                     # Check for very slow execution
                     partial_elapsed = time.time() - start_time
                     if partial_elapsed > 120:
-                        print(f"[{analyst_type}] ⚠️ Slow execution warning: {tool_name} took {partial_elapsed:.1f}s")
+                        safe_print(f"[{analyst_type}] ⚠️ Slow execution warning: {tool_name} took {partial_elapsed:.1f}s")
 
                     if isinstance(result, str):
                         sanitized_result = _strip_trailing_interactive_followup(result)
@@ -415,7 +411,7 @@ def timing_wrapper(analyst_type, timeout_seconds=120, uses_web_search=False):
                 
                 # Calculate execution time
                 elapsed = time.time() - start_time
-                print(f"[{analyst_type}] ✅ Tool '{tool_name}' completed in {elapsed:.2f}s")
+                safe_print(f"[{analyst_type}] ✅ Tool '{tool_name}' completed in {elapsed:.2f}s")
                 
                 # Format the result for display (truncate if too long)
                 result_summary = result
@@ -483,8 +479,8 @@ def timing_wrapper(analyst_type, timeout_seconds=120, uses_web_search=False):
                 elif "insufficient data" in str(e).lower():
                     detailed_error = f"DATA ERROR: {str(e)}\n💡 SOLUTION: Try a different date range or check if the symbol is correct"
                 
-                print(f"[{analyst_type}] ❌ Tool '{tool_name}' failed after {elapsed:.2f}s")
-                print(f"[{analyst_type}] 🔍 ERROR DETAILS:")
+                safe_print(f"[{analyst_type}] ❌ Tool '{tool_name}' failed after {elapsed:.2f}s")
+                safe_print(f"[{analyst_type}] 🔍 ERROR DETAILS:")
                 print(f"   Error Type: {error_details['error_type']}")
                 print(f"   Error Message: {detailed_error}")
                 print(f"   Tool Inputs: {input_summary}")
@@ -1349,7 +1345,6 @@ class Toolkit:
         
         # Get indicator data for each indicator across the time window
         import pandas as pd
-        from datetime import datetime, timedelta
         
         # Calculate date range
         curr_dt = pd.to_datetime(curr_date)

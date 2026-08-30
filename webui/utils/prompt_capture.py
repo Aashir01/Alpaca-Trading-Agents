@@ -6,7 +6,7 @@ when generating reports, allowing users to view the exact prompts via "Show Prom
 """
 
 import re
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 from webui.utils.state import app_state
 from tradingagents.run_logger import get_run_audit_logger
 

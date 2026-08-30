@@ -170,6 +170,32 @@ def _collect_llm_params(
     )
 
 
+def _seed_model_choice(provider, role, current_value, allowed_values):
+    """Pick the dropdown value (and custom-model text) for a provider/role.
+
+    A value the user already chose wins. Otherwise fall back to the model named
+    in DEFAULT_CONFIG, which reads DEEP_THINK_LLM / QUICK_THINK_LLM from .env.
+    A configured model that is not in the catalog (any open-weight id, say) is
+    surfaced through the "custom" option rather than being silently dropped.
+    """
+    if current_value in allowed_values:
+        return current_value, dash.no_update
+
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    configured_provider = (DEFAULT_CONFIG.get("llm_provider") or "openai").lower()
+    configured = DEFAULT_CONFIG.get(
+        "quick_think_llm" if role == "quick" else "deep_think_llm"
+    )
+    if configured and (provider or "openai").lower() == configured_provider:
+        if configured in allowed_values:
+            return configured, dash.no_update
+        if "custom" in allowed_values:
+            return "custom", configured
+
+    return get_default_model_for_provider(provider, role), dash.no_update
+
+
 def register_control_callbacks(app):
     """Register all control and configuration callbacks"""
 
@@ -275,6 +301,8 @@ def register_control_callbacks(app):
             Output("llm-provider-info", "children"),
             Output("google-thinking-level-group", "style"),
             Output("anthropic-effort-group", "style"),
+            Output("quick-llm-custom-model", "value"),
+            Output("deep-llm-custom-model", "value"),
         ],
         [Input("llm-provider", "value")],
         [State("quick-llm", "value"), State("deep-llm", "value")],
@@ -286,8 +314,16 @@ def register_control_callbacks(app):
         deep_options = get_model_options_for_provider(provider, "deep")
         quick_values = {option["value"] for option in quick_options}
         deep_values = {option["value"] for option in deep_options}
-        quick_value = current_quick if current_quick in quick_values else get_default_model_for_provider(provider, "quick")
-        deep_value = current_deep if current_deep in deep_values else get_default_model_for_provider(provider, "deep")
+        # Seed from DEFAULT_CONFIG so a model configured in .env is what the UI
+        # offers. Without this the dropdown falls back to a GPT-5 id even for a
+        # non-OpenAI provider, and the run dies on an endpoint that has no such
+        # model (or no /v1/responses route at all).
+        quick_value, quick_custom = _seed_model_choice(
+            provider, "quick", current_quick, quick_values
+        )
+        deep_value, deep_custom = _seed_model_choice(
+            provider, "deep", current_deep, deep_values
+        )
         provider_info = _status_panel(
             metadata["title"],
             f"{metadata['summary']} API key: {metadata['api_key']}. Endpoint: {metadata['endpoint']}.",
@@ -308,6 +344,8 @@ def register_control_callbacks(app):
             provider_info,
             google_style,
             anthropic_style,
+            quick_custom,
+            deep_custom,
         )
 
     @app.callback(
@@ -783,7 +821,6 @@ def register_control_callbacks(app):
             return "", {}, 1, 1, 1, 1
 
         # Always use current/real-time data for analysis
-        from datetime import datetime
 
         # Determine action based on current state
         is_stop_action = app_state.analysis_running or app_state.loop_enabled or app_state.market_hour_enabled

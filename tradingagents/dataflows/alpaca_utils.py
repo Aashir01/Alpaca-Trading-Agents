@@ -1,7 +1,6 @@
 # alpaca_utils.py
 
 import math
-import os
 import pandas as pd
 import time
 from datetime import datetime, timedelta
@@ -677,6 +676,9 @@ class AlpacaUtils:
             daily_change_percent = (daily_change_dollars / last_equity) * 100 if last_equity != 0 else 0
             
             return {
+                "equity": equity,
+                "last_equity": last_equity,
+                "portfolio_value": float(account.portfolio_value),
                 "buying_power": buying_power,
                 "cash": cash,
                 "daily_change_dollars": daily_change_dollars,
@@ -684,7 +686,13 @@ class AlpacaUtils:
             }
         except Exception as e:
             print(f"Error fetching account info: {e}")
+            # Zeros are deliberate: every risk gate sizing off this snapshot
+            # then computes a zero allowance and refuses to trade, rather than
+            # sizing against an equity figure we could not actually verify.
             return {
+                "equity": 0,
+                "last_equity": 0,
+                "portfolio_value": 0,
                 "buying_power": 0,
                 "cash": 0,
                 "daily_change_dollars": 0,

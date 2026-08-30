@@ -16,7 +16,7 @@ import dash_bootstrap_components as dbc
 from flask import Flask
 import logging
 
-from webui.config.constants import APP_CONFIG, COLORS
+from webui.config.constants import APP_CONFIG
 from webui.layout import create_main_layout
 from webui.callbacks import register_all_callbacks
 

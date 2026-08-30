@@ -10,6 +10,9 @@ class AppState:
         self.current_symbol = None  # Symbol displayed in UI
         self.analyzing_symbol = None  # Symbol currently being analyzed (backend)
         self.analysis_running = False
+        # Why the last run stopped. A run that dies before the graph starts
+        # leaves every agent PENDING, so without this the UI shows no cause.
+        self.last_error = None
         self.analysis_trace = []
         self.tool_calls_count = 0
         self.llm_calls_count = 0
@@ -188,6 +191,7 @@ class AppState:
                 "Risky Analyst": "pending",
                 "Safe Analyst": "pending",
                 "Neutral Analyst": "pending",
+                "Options Strategist": "pending",
                 "Portfolio Manager": "pending"
             },
             "current_reports": {
@@ -205,6 +209,7 @@ class AppState:
                 "safe_report": None,
                 "neutral_report": None,
                 "portfolio_decision": None,
+                "options_strategy_report": None,
                 "final_trade_decision": None
             },
             "agent_prompts": {
@@ -222,6 +227,7 @@ class AppState:
                 "safe_report": None,
                 "neutral_report": None,
                 "portfolio_decision": None,
+                "options_strategy_report": None,
                 "final_trade_decision": None
             },
             "investment_debate_state": None,
@@ -411,6 +417,7 @@ class AppState:
                     "safe_report": None,
                     "neutral_report": None,
                     "portfolio_decision": None,
+                    "options_strategy_report": None,
                     "final_trade_decision": None
                 },
                 "agent_prompts": {
@@ -427,6 +434,7 @@ class AppState:
                     "safe_report": None,
                     "neutral_report": None,
                     "portfolio_decision": None,
+                    "options_strategy_report": None,
                     "final_trade_decision": None
                 },
                 "agent_statuses": {
@@ -442,6 +450,7 @@ class AppState:
                     "Risky Analyst": "pending",
                     "Safe Analyst": "pending",
                     "Neutral Analyst": "pending",
+                    "Options Strategist": "pending",
                     "Portfolio Manager": "pending"
                 },
                 "analysis_results": None,

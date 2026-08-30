@@ -5,8 +5,14 @@ run_webui_dash.py - Run the Dash-based web UI for TradingAgents
 
 import argparse
 import sys
-import os
 import socket
+
+# Must run before anything logs: the agents print emoji, which raises
+# UnicodeEncodeError on a cp1252 Windows console and aborts tool calls.
+from tradingagents.console_encoding import ensure_utf8_console
+
+ensure_utf8_console()
+
 from webui.app_dash import run_app  
 
 

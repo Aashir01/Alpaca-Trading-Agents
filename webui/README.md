@@ -1,6 +1,6 @@
-# AlpacaTradingAgent Web UI
+# Options Alpha Web UI
 
-This directory contains the Dash and Flask web interface for AlpacaTradingAgent, an auditable multi-agent trading research framework for paper trading, strategy testing, and risk-controlled Alpaca execution.
+This directory contains the Dash and Flask application for Options Alpha: an app shell with sidebar navigation, a live trading dashboard, an Options Desk showing risk-gate verdicts, and the agent audit trail.
 
 ## Structure
 
