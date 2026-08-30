@@ -269,6 +269,31 @@ Qwen/DashScope, GLM/Zhipu, OpenRouter, Ollama, and Azure OpenAI. Each has its ow
 `env.sample`; provider-specific controls (reasoning effort, thinking level, verbosity) are
 preserved.
 
+### Model selection
+
+The defaults are OpenAI model ids. Any other provider needs its own, set in `.env`
+(or in the Web UI, which seeds its fields from these):
+
+```bash
+DEEP_THINK_LLM=Qwen/Qwen2.5-72B-Instruct    # research, trader, risk manager
+QUICK_THINK_LLM=Qwen/Qwen2.5-32B-Instruct   # analysts, summaries
+LLM_BACKEND_URL=https://your-endpoint/v1    # any OpenAI-compatible server
+```
+
+Two constraints are worth knowing before you pick a model:
+
+- **Tool calling is required.** The analysts reach the market only through bound
+  tools. A model that cannot emit tool calls still produces confident-looking
+  reports — with no market data behind them. Verify with a one-line tool call
+  before trusting a run.
+- **Model ids are provider-specific.** An Ollama tag (`qwen3:latest`) is not
+  valid on a hosted endpoint, which wants the full id
+  (`Qwen/Qwen2.5-72B-Instruct`). The Web UI checks the model against the
+  endpoint before starting and refuses the run with the reason if it is missing.
+
+Most non-OpenAI endpoints serve no embeddings model. Agent memory then disables
+itself for the run and says so in the log; everything else proceeds.
+
 ### Market data
 
 | Variable | Purpose |
@@ -325,6 +350,18 @@ Independent of the options gate, a deterministic guard sits in front of **every*
 - **LLM budget cap** — bounded spend per run, with a live cost monitor.
 - **Fail-closed account reads** — when Alpaca can't be reached, sizing sees zero equity and
   refuses to trade rather than sizing against an unverified balance.
+
+---
+
+## Troubleshooting
+
+| What you see | Cause | Fix |
+| --- | --- | --- |
+| `Route POST:/v1/responses not found` | A GPT-5 model id against a non-OpenAI endpoint. The Responses API is OpenAI's own protocol. | Use a model your endpoint serves. The Responses wrapper is now used only for OpenAI hosts. |
+| `The model 'x' does not exist` | Model id not served there — often an Ollama tag on a hosted endpoint. | Set `DEEP_THINK_LLM` / `QUICK_THINK_LLM` to ids that endpoint lists. |
+| Analysts show COMPLETED but reports are a few characters | The model failed and the analyst wrote the error into its report body. | Check the log for a 404. Real reports run 800–4000 characters. |
+| Agents report "encoding problems" and analyse nothing | A Windows console on cp1252 cannot encode the emoji in the progress logs, and the failing log line aborts the tool call. | Fixed — the console is forced to UTF-8 at startup. |
+| Every agent stays PENDING | The run stopped before the graph started. | The reason now prints in red under the status table. |
 
 ---
 

@@ -10,6 +10,9 @@ class AppState:
         self.current_symbol = None  # Symbol displayed in UI
         self.analyzing_symbol = None  # Symbol currently being analyzed (backend)
         self.analysis_running = False
+        # Why the last run stopped. A run that dies before the graph starts
+        # leaves every agent PENDING, so without this the UI shows no cause.
+        self.last_error = None
         self.analysis_trace = []
         self.tool_calls_count = 0
         self.llm_calls_count = 0

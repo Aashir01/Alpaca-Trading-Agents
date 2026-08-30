@@ -8,21 +8,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-    /* Surfaces, from deepest to most elevated */
-    --bg:            #080B14;
-    --surface:       #0E1320;
-    --surface-2:     #141B2D;
-    --surface-3:     #1B2438;
-    --border:        #222C42;
-    --border-strong: #2E3A54;
+    /* Vantablack ground, with surfaces stepped in near-neutral greys so panels
+       separate by luminance alone -- no blue cast competing with the accent. */
+    --bg:            #000000;
+    --surface:       #0A0A0C;
+    --surface-2:     #131318;
+    --surface-3:     #1C1C22;
+    --border:        #26262E;
+    --border-strong: #3A3A45;
 
     /* Text */
-    --text:          #E9EEF9;
-    --text-dim:      #97A3BA;
-    --text-faint:    #64708A;
+    --text:          #F4F5F7;
+    --text-dim:      #A0A0AD;
+    --text-faint:    #6E6E7C;
 
     /* Semantic */
     --accent:        #4F8DFD;
+    --accent-strong: #7AA9FF;
     --accent-dim:    rgba(79, 141, 253, 0.14);
     --pos:           #22D07F;
     --pos-dim:       rgba(34, 208, 127, 0.13);
@@ -32,6 +34,11 @@
     --warn-dim:      rgba(255, 176, 32, 0.13);
     --options:       #A78BFA;
     --options-dim:   rgba(167, 139, 250, 0.14);
+
+    /* Elevation: on a true-black ground shadow is invisible, so panels are
+       lifted with a hairline top highlight instead. */
+    --ring:          inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --shadow:        0 8px 28px rgba(0, 0, 0, 0.65);
 
     --radius:        12px;
     --radius-sm:     8px;

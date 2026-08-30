@@ -15,3 +15,7 @@ data_cache/
 .pytest_cache/
 venv/
 .venv/
+
+# Timestamped .env backups — these contain live keys
+.env.bak.*
+.env.backup*

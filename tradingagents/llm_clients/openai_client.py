@@ -13,7 +13,28 @@ class NormalizedChatOpenAI(ChatOpenAI):
         return normalize_content(super().invoke(input, config, **kwargs))
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
-        return super().with_structured_output(schema, method=method or "function_calling", **kwargs)
+        """Bind a schema, defaulting to the method open-weight endpoints support.
+
+        json_schema (LangChain's default for models it believes support it) is
+        not implemented by most OpenAI-compatible servers, so function_calling
+        is pinned instead. The tool choice is also forced: left free, a smaller
+        model handed a large schema and a long prompt often answers in prose,
+        LangChain returns None, and the caller falls back to free text -- losing
+        the machine-readable decision the risk gate and executor read.
+        """
+        method = method or "function_calling"
+        if method == "function_calling" and "tool_choice" not in kwargs:
+            name = getattr(schema, "__name__", None)
+            if name:
+                try:
+                    return super().with_structured_output(
+                        schema, method=method, tool_choice=name, **kwargs
+                    )
+                except (TypeError, ValueError):
+                    # Endpoint or LangChain version rejects a named tool choice;
+                    # fall through to the unforced binding below.
+                    pass
+        return super().with_structured_output(schema, method=method, **kwargs)
 
 
 def _input_to_messages(input_: Any) -> list:

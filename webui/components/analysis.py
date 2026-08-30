@@ -275,6 +275,54 @@ def execute_options_plan_after_analysis(ticker, recommended_action):
         print(f"[OPTIONS] Could not write options audit entry: {exc}")
 
 
+def _preflight_models(config):
+    """Fail fast when a configured model is not served by the endpoint.
+
+    Without this the run starts and every agent 404s in turn. The analysts
+    still report COMPLETED (their failure is caught and written into the
+    report body), the graph then stalls at the first researcher, and the UI
+    sits on PENDING with nothing to explain why. One cheap call per distinct
+    model turns that dead end into an actionable message.
+    """
+    provider = (config.get("llm_provider") or "openai").lower()
+    if provider not in ("openai", "local_openai"):
+        return
+
+    import os
+
+    from openai import OpenAI
+
+    base_url = config.get("backend_url") or os.getenv("OPENAI_BASE_URL") or None
+    api_key = os.getenv("OPENAI_API_KEY") or ("local-llm" if provider == "local_openai" else None)
+    if not api_key:
+        return
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    endpoint = base_url or "https://api.openai.com/v1"
+    for role in ("quick_think_llm", "deep_think_llm"):
+        model = config.get(role)
+        if not model:
+            continue
+        try:
+            client.chat.completions.create(
+                model=model, max_tokens=1, messages=[{"role": "user", "content": "ping"}]
+            )
+        except Exception as exc:
+            if "model_not_found" in str(exc) or "does not exist" in str(exc):
+                raise ValueError(
+                    f"Model '{model}' is not available at {endpoint}. "
+                    f"Set it to a model that endpoint actually serves "
+                    f"(DEEP_THINK_LLM / QUICK_THINK_LLM in .env, or the "
+                    f"custom-model box on this page). Note that model ids are "
+                    f"provider-specific: an Ollama tag like 'qwen3:latest' is "
+                    f"not valid on a hosted endpoint, which expects a full id "
+                    f"such as 'Qwen/Qwen2.5-72B-Instruct'."
+                ) from exc
+            # Anything else (auth, network, rate limit) is left to surface
+            # naturally during the run rather than blocking it here.
+            return
+
+
 def run_analysis(
     ticker,
     selected_analysts,
@@ -314,6 +362,7 @@ def run_analysis(
             return
         current_state["analysis_running"] = True
         current_state["analysis_complete"] = False
+        app_state.last_error = None
 
         # Handle both new dict format and legacy integer format
         if isinstance(research_depth_config, dict):
@@ -344,6 +393,9 @@ def run_analysis(
         for key, value in (provider_settings or {}).items():
             if value not in (None, ""):
                 config[key] = value
+
+        # Verify the models exist before spinning up the graph.
+        _preflight_models(config)
 
         # Initialize TradingAgentsGraph
         print(f"Initializing TradingAgentsGraph with analysts: {selected_analysts}")
@@ -484,6 +536,8 @@ def run_analysis(
 
     except Exception as e:
         print(f"Analysis error: {e}")
+        app_state.last_error = str(e)
+        app_state.needs_ui_update = True
         import traceback
         traceback.print_exc()
         if run_started:

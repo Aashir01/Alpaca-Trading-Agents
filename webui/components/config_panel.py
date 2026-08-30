@@ -222,6 +222,24 @@ def _llm_param_controls(role, default_model):
     )
 
 
+def _model_defaults(role):
+    """Resolve the configured model into a (dropdown value, custom text) pair.
+
+    DEFAULT_CONFIG reads DEEP_THINK_LLM / QUICK_THINK_LLM from .env. A model
+    that is not in the OpenAI catalog (any open-weight id) has to be carried by
+    the "custom" option, otherwise the layout falls back to a GPT-5 id that a
+    non-OpenAI endpoint cannot serve.
+    """
+    fallback = "gpt-5.4-nano" if role == "quick" else "gpt-5.4-mini"
+    configured = _configured(
+        "quick_think_llm" if role == "quick" else "deep_think_llm", fallback
+    )
+    known = {option["value"] for option in get_model_options_for_provider("openai", role)}
+    if configured in known:
+        return configured, ""
+    return "custom", configured
+
+
 def _model_panel(role, title, icon, default_model):
     prefix = f"{role}-llm"
     return html.Div(
@@ -243,7 +261,7 @@ def _model_panel(role, title, icon, default_model):
                     dbc.Select(
                         id=prefix,
                         options=get_model_options_for_provider("openai", role),
-                        value=default_model,
+                        value=_model_defaults(role)[0] or default_model,
                         className="config-select mt-3",
                     ),
                     html.Div(
@@ -253,7 +271,7 @@ def _model_panel(role, title, icon, default_model):
                                 id=f"{prefix}-custom-model",
                                 type="text",
                                 placeholder="provider/model-name",
-                                value="",
+                                value=_model_defaults(role)[1],
                                 className="config-input",
                             ),
                             "keyboard",
@@ -472,6 +490,16 @@ def _schedule_and_trading():
     )
 
 
+def _configured(key, fallback):
+    """Read a default from DEFAULT_CONFIG, which is populated from .env."""
+    try:
+        from tradingagents.default_config import DEFAULT_CONFIG
+
+        return DEFAULT_CONFIG.get(key) or fallback
+    except Exception:
+        return fallback
+
+
 def _model_setup():
     return html.Div(
         [
@@ -482,7 +510,9 @@ def _model_setup():
                         dbc.Select(
                             id="llm-provider",
                             options=get_llm_provider_options(),
-                            value="openai",
+                            # Default to the provider configured in .env so the
+                            # UI opens on a combination that can actually run.
+                            value=_configured("llm_provider", "openai"),
                             className="config-select",
                         ),
                         "network-wired",
@@ -494,7 +524,7 @@ def _model_setup():
                                 id="backend-url",
                                 type="text",
                                 placeholder="Optional OpenAI-compatible endpoint",
-                                value="",
+                                value=_configured("backend_url", ""),
                                 className="config-input",
                             ),
                             "server",

@@ -30,7 +30,11 @@ REFRESH_INTERVALS = {
 APP_CONFIG = {
     "title": "Options Alpha — Autonomous Options Trading Desk",
     "external_stylesheets": [
-        "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+        # dashboard.css asks for Inter and JetBrains Mono; without these the UI
+        # silently falls back to the system sans and the numeric columns lose
+        # their tabular alignment.
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+        "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css",
     ],
     "suppress_callback_exceptions": True,
     "update_title": None,

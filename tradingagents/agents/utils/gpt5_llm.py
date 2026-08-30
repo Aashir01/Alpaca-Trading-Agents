@@ -1,6 +1,7 @@
 """Custom LangChain wrapper for OpenAI reasoning models using Responses API."""
 
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from pydantic import ConfigDict
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -552,12 +553,26 @@ def is_gpt5_model(model_name: str) -> bool:
     return is_responses_model(model_name)
 
 
+def _endpoint_supports_responses(base_url: Optional[str]) -> bool:
+    """True when base_url is OpenAI's own API (or unset, meaning the default)."""
+    if not base_url:
+        return True
+    host = urlparse(str(base_url)).hostname or ""
+    host = host.lower()
+    return host == "api.openai.com" or host.endswith(".openai.azure.com")
+
+
 def get_chat_model(model_name: str, api_key: Optional[str] = None, **kwargs):
     """Factory function to get the appropriate chat model."""
     base_url = kwargs.pop("base_url", None)
     model_role = kwargs.pop("model_role", "deep")
 
-    if is_responses_model(model_name):
+    # The Responses API (POST /v1/responses) is OpenAI's own protocol. A custom
+    # base_url almost always points at an OpenAI-*compatible* server, which
+    # implements /v1/chat/completions only and answers /v1/responses with a 404
+    # ("Route POST:/v1/responses not found"). Model *name* alone is therefore not
+    # enough to choose the wrapper -- the endpoint has to be OpenAI's too.
+    if is_responses_model(model_name) and _endpoint_supports_responses(base_url):
         params = normalize_model_params(model_name, kwargs, role=model_role)
         reasoning_effort = params.get("reasoning_effort", "medium")
         verbosity = params.get("text_verbosity") or params.get("verbosity", "medium")
@@ -578,7 +593,12 @@ def get_chat_model(model_name: str, api_key: Optional[str] = None, **kwargs):
             parallel_tool_calls=parallel_tool_calls,
         )
     else:
-        from langchain_openai import ChatOpenAI
+        # NormalizedChatOpenAI, not a bare ChatOpenAI: it pins structured output
+        # to function_calling. LangChain otherwise defaults to json_schema, which
+        # OpenAI-compatible endpoints serving open-weight models generally do not
+        # implement -- the call then dies with "'NoneType' object is not iterable"
+        # and every reasoning node silently falls back to free text.
+        from tradingagents.llm_clients.openai_client import NormalizedChatOpenAI as ChatOpenAI
         # Chat Completions uses max_tokens; the UI uses max_output_tokens.
         if "max_output_tokens" in kwargs and "max_tokens" not in kwargs:
             kwargs["max_tokens"] = kwargs.pop("max_output_tokens")

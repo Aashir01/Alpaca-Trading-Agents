@@ -1,5 +1,16 @@
 import os
 
+from dotenv import load_dotenv
+
+# This module reads its defaults from the environment at import time, so .env
+# has to be on the environment *before* the dict below is built. Loading it in
+# tradingagents.dataflows.config is not enough: whichever module imports first
+# wins, and when default_config lost that race every documented .env setting
+# (LLM_PROVIDER, the OPTIONS_* guardrails, the directory overrides) was silently
+# ignored in favour of the hardcoded fallbacks. load_dotenv() never overrides a
+# variable that is already set, so a real environment variable still wins.
+load_dotenv()
+
 _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 
 
@@ -55,9 +66,12 @@ DEFAULT_CONFIG = {
     ),
     # LLM settings
     "llm_provider": os.getenv("LLM_PROVIDER", "openai"),
-    "deep_think_llm": "gpt-5.4-mini",
-    "quick_think_llm": "gpt-5.4-nano",
-    "backend_url": None,
+    # Model names are overridable so a non-OpenAI provider (Ollama, vLLM, or a
+    # hosted OpenAI-compatible endpoint) can be driven entirely from .env,
+    # without editing source. The defaults stay OpenAI's.
+    "deep_think_llm": os.getenv("DEEP_THINK_LLM", "gpt-5.4-mini"),
+    "quick_think_llm": os.getenv("QUICK_THINK_LLM", "gpt-5.4-nano"),
+    "backend_url": os.getenv("LLM_BACKEND_URL") or None,
     "google_thinking_level": None,
     "openai_reasoning_effort": None,
     "anthropic_effort": None,
