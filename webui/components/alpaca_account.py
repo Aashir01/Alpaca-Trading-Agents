@@ -222,21 +222,25 @@ def render_orders_table_body(orders_data, page=1):
             "pending_new": "text-warning",
             "accepted": "text-info",
             "rejected": "text-danger"
-        }.get(order.get("Status", "").lower(), "text-muted")
+        # A multi-leg options order carries Side and Asset as None -- the legs
+        # hold them, not the parent. `.get(key, "")` still returns None when the
+        # key is present and null, so the default alone is not enough and the
+        # whole orders table used to fail to render once an mleg order existed.
+        }.get((order.get("Status") or "").lower(), "text-muted")
 
-        side_color = "text-success" if order.get("Side", "").lower() == "buy" else "text-danger"
+        side_color = "text-success" if (order.get("Side") or "").lower() == "buy" else "text-danger"
 
         row = html.Tr([
             html.Td([
                 html.Div([
-                    html.Strong(order["Asset"], className="symbol-text"),
+                    html.Strong(order.get("Asset") or "Multi-leg", className="symbol-text"),
                     html.Br(),
                     html.Small(order["Order Type"], className="text-muted")
                 ])
             ], className="symbol-cell"),
             html.Td([
                 html.Div([
-                    html.Span(order["Side"], className=f"fw-bold {side_color}"),
+                    html.Span(order.get("Side") or "—", className=f"fw-bold {side_color}"),
                     html.Br(),
                     html.Small(f"{order['Qty']} shares", className="text-muted")
                 ])
@@ -256,7 +260,7 @@ def render_orders_table_body(orders_data, page=1):
             html.Td([
                 html.Span([
                     html.I(className=f"fas fa-circle me-1 {status_color}"),
-                    order["Status"]
+                    order.get("Status") or "—"
                 ], className=f"status-badge {status_color}")
             ], className="status-cell")
         ], className="table-row-hover order-row", id=f"order-row-{order.get('Asset', '')}-{page}-{idx}")
