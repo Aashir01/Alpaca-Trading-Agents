@@ -18,6 +18,9 @@ from ..dataflows.alpaca_utils import AlpacaUtils, get_alpaca_trading_client
 from ..safety import get_safety_guard
 
 
+from tradingagents.mcp_client import AlpacaMCPError, alpaca_mcp_enabled, call_alpaca_tool
+
+
 def _proposal_from_dict(plan: dict) -> OptionsStrategyProposal:
     legs = [
         OptionsLeg(**leg)
@@ -214,6 +217,24 @@ def submit_options_plan(
             "error": f"Safety guard error: {exc}",
         }
 
+    # Route through Alpaca's official MCP server when enabled, falling back to
+    # the SDK if it is unreachable. The gate and the guard above run either
+    # way: the transport changes, the safety path does not.
+    if alpaca_mcp_enabled():
+        try:
+            order_id = _submit_via_mcp(proposal, qty, limit_price, single_leg)
+            return {
+                "submitted": True,
+                "order_id": order_id,
+                "gate_result": gate_result.model_dump(mode="json"),
+                "limit_price": limit_price,
+                "model_estimate": proposal.expected_credit_debit,
+                "transport": "alpaca-mcp-server",
+                "error": None,
+            }
+        except AlpacaMCPError as exc:
+            print(f"[options_executor] MCP submission failed ({exc}); falling back to the SDK")
+
     try:
         submitted_order = client.submit_order(order_request)
         return {
@@ -222,10 +243,58 @@ def submit_options_plan(
             "gate_result": gate_result.model_dump(mode="json"),
             "limit_price": limit_price,
             "model_estimate": proposal.expected_credit_debit,
+            "transport": "alpaca-py",
             "error": None,
         }
     except Exception as exc:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": f"Broker submission error: {exc}"}
+
+
+def _submit_via_mcp(proposal, qty: int, limit_price: float, single_leg: bool) -> Optional[str]:
+    """Place the options order through Alpaca's MCP server.
+
+    Every value the tool takes is a string, including qty and ratio_qty. For a
+    multi-leg order the parent carries no symbol or side -- the legs do -- and
+    limit_price is the net debit (positive) or credit (negative).
+    """
+    args: dict = {
+        "qty": str(qty),
+        "type": "limit",
+        "limit_price": str(limit_price),
+        "time_in_force": "day",
+    }
+    if single_leg:
+        leg = proposal.legs[0]
+        args["symbol"] = leg.symbol.upper()
+        args["side"] = leg.side
+        args["qty"] = str(qty * leg.ratio_qty)
+        args["position_intent"] = "buy_to_open" if leg.side == "buy" else "sell_to_open"
+    else:
+        args["order_class"] = "mleg"
+        args["legs"] = [
+            {
+                "symbol": leg.symbol.upper(),
+                "ratio_qty": str(leg.ratio_qty),
+                "side": leg.side,
+                "position_intent": "buy_to_open" if leg.side == "buy" else "sell_to_open",
+            }
+            for leg in proposal.legs
+        ]
+
+    response = call_alpaca_tool("place_option_order", args)
+    if isinstance(response, dict):
+        for key in ("id", "order_id"):
+            if response.get(key):
+                return str(response[key])
+        inner = response.get("result") or response.get("order") or response.get("data")
+        if isinstance(inner, dict):
+            for key in ("id", "order_id"):
+                if inner.get(key):
+                    return str(inner[key])
+    # No id means the broker did not acknowledge an order. Reporting success
+    # here would claim a trade that may not exist, so treat it as a failure and
+    # let the caller fall back to the SDK.
+    raise AlpacaMCPError(f"place_option_order returned no order id: {str(response)[:200]}")
 
 
 def get_options_positions() -> list[dict]:

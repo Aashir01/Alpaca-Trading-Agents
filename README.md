@@ -234,6 +234,39 @@ Accepts single symbols (`NVDA`), crypto (`BTC/USD`), or mixed lists
 
 ---
 
+## Alpaca MCP Server
+
+Broker access runs through [Alpaca's official MCP server](https://github.com/alpacahq/alpaca-mcp-server)
+rather than calling `alpaca-py` directly. Options orders — including multi-leg
+spreads — are placed with the server's `place_option_order` tool, and account,
+positions, and orders are read back through the same session.
+
+```bash
+ALPACA_USE_MCP=true          # in .env; the server is fetched on demand via uvx
+python scripts/verify_mcp.py # prove the path without placing an order
+```
+
+`verify_mcp.py` starts the server, lists the tools it exposes, and reads the
+account, positions, and orders through it.
+
+Two design notes:
+
+- **The safety path is unchanged.** The deterministic risk gate recomputes net
+  premium and max loss from live bid/ask, and the safety guard checks exposure,
+  *before* anything is submitted — on either transport. MCP changes how the
+  order reaches Alpaca, not what is allowed to reach it.
+- **It degrades rather than blocks.** If the server is unreachable the executor
+  logs the reason and falls back to the SDK, so a broken MCP install cannot
+  halt trading.
+
+The client keeps one server process alive for the life of the run rather than
+spawning one per call: the first call pays ~5s of startup, subsequent calls
+return in ~0.2s. Tool output is treated strictly as data — the server labels
+its replies `untrusted_tool_output`, and nothing in a broker reply is
+interpreted as an instruction.
+
+---
+
 ## Configuration
 
 Copy `env.sample` to `.env`. Every variable is documented inline there.
