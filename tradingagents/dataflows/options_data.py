@@ -487,16 +487,44 @@ def _fetch_hv_20(symbol: str) -> Optional[float]:
 
 
 def _fetch_days_to_earnings(symbol: str, config: Optional[dict]) -> Optional[int]:
-    """Days until next earnings, if available via Finnhub."""
-    try:
-        from .earnings_utils import get_earnings_calendar_data
+    """Days until the next scheduled earnings date, via Finnhub.
 
-        calendar = get_earnings_calendar_data(symbol=symbol, config=config)
-        if calendar and "next_earnings_date" in calendar:
-            next_date = datetime.strptime(calendar["next_earnings_date"], "%Y-%m-%d").date()
-            return (next_date - date.today()).days
-    except Exception:
-        pass
+    This previously called get_earnings_calendar_data(symbol=..., config=...),
+    which takes neither argument and returns a formatted string rather than a
+    mapping. The bare except swallowed the TypeError, so earnings proximity was
+    silently always None -- and an options desk that cannot see an upcoming
+    print will happily sell premium straight into an IV crush.
+    """
+    if "/" in symbol:          # crypto has no earnings
+        return None
+    try:
+        from .finnhub_utils import get_finnhub_client
+
+        client = get_finnhub_client()
+        if client is None:
+            return None
+        today = date.today()
+        calendar = client.earnings_calendar(
+            _from=today.isoformat(),
+            to=(today + timedelta(days=120)).isoformat(),
+            symbol=symbol.upper(),
+        )
+        entries = (calendar or {}).get("earningsCalendar") or []
+        upcoming = []
+        for entry in entries:
+            raw = entry.get("date")
+            if not raw:
+                continue
+            try:
+                parsed = datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if parsed >= today:
+                upcoming.append(parsed)
+        if upcoming:
+            return (min(upcoming) - today).days
+    except Exception as exc:
+        print(f"[options_data] earnings lookup failed for {symbol}: {exc}")
     return None
 
 
