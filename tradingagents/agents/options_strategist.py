@@ -92,6 +92,8 @@ def create_options_strategist(llm, config=None):
         confidence = _extract_confidence(trader_plan)
         direction = _direction_from_action(recommended_action)
 
+        allow_neutral = bool(config.get("options_allow_neutral", True))
+
         if not enabled:
             return {
                 "options_strategy_report": "Options trading is disabled; no options strategy selected.",
@@ -99,9 +101,19 @@ def create_options_strategist(llm, config=None):
                 "sender": "Options Strategist",
             }
 
-        if direction == "neutral":
+        # A neutral equity signal is not the same as "no options trade". The
+        # prompt already reasons about it -- iron_condor is an allowed strategy,
+        # selection rule 1 routes a neutral view with rich IV to it, and rule 6
+        # returns `none` when there is no premium edge. Short-circuiting here
+        # meant those rules never ran and the desk sat out every HOLD, which is
+        # most of them. Let the strategist decide, and let the risk gate and the
+        # no-naked-shorts rule keep the structure defined-risk.
+        if direction == "neutral" and not allow_neutral:
             return {
-                "options_strategy_report": f"Trader signal is {recommended_action} (neutral); no directional options overlay selected.",
+                "options_strategy_report": (
+                    f"Trader signal is {recommended_action} (neutral) and neutral "
+                    "overlays are disabled; no options strategy selected."
+                ),
                 "options_trade_plan": None,
                 "sender": "Options Strategist",
             }

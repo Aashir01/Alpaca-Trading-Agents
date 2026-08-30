@@ -196,6 +196,10 @@ DEFAULT_CONFIG = {
     "openai_store_responses": False,  # Disable response storing by default to reduce latency/payload
     # Options trading (Options Alpha overlay)
     "options_trading_enabled": _env_bool("OPTIONS_TRADING_ENABLED", False),  # Master switch for the Options Strategist node and options execution
+    # A neutral signal still permits a defined-risk, non-directional structure
+    # (an iron condor when IV is rich). The strategist prompt already encodes
+    # when to take one and when to stand aside.
+    "options_allow_neutral": _env_bool("OPTIONS_ALLOW_NEUTRAL", True),
     "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
