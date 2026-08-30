@@ -171,8 +171,10 @@ def submit_options_plan(
             )
             for leg in proposal.legs
         ]
+        # No top-level symbol on an MLEG order: the legs carry their own OCC
+        # symbols, and Alpaca rejects the parent outright ("symbol is not
+        # allowed for mleg order") when the underlying is set here as well.
         order_request = LimitOrderRequest(
-            symbol=proposal.symbol.upper(),
             qty=qty,
             limit_price=limit_price,
             time_in_force=TimeInForce.DAY,
@@ -180,12 +182,37 @@ def submit_options_plan(
             legs=legs,
         )
 
-    # Run through the existing deterministic safety guard.
+    # Run through the existing deterministic safety guard. check_order takes
+    # (symbol, notional) and *returns* a verdict -- it does not raise and it
+    # does not accept an order object. Passing the request here made every
+    # options order fail with a TypeError that the except-block below then
+    # reported as a veto, so no options order could ever be submitted.
+    # Capital at risk, not premium paid, is the exposure the guard should see:
+    # for a credit spread the debit is small while the loss is not.
     try:
         guard = get_safety_guard()
-        guard.check_order(order_request)
+        notional = abs(float(getattr(gate_result, "max_loss_usd", 0.0) or 0.0))
+        if not notional:
+            notional = abs(float(limit_price or 0.0)) * 100.0 * max(qty, 1)
+        verdict = guard.check_order(
+            symbol=proposal.symbol.upper(),
+            notional=notional,
+            account=account,
+        )
+        if verdict is not None and not verdict.allowed:
+            return {
+                "submitted": False,
+                "order_id": None,
+                "gate_result": gate_result.model_dump(mode="json"),
+                "error": "Safety guard veto: " + "; ".join(verdict.reasons),
+            }
     except Exception as exc:
-        return {"submitted": False, "order_id": None, "gate_result": None, "error": f"Safety guard veto: {exc}"}
+        return {
+            "submitted": False,
+            "order_id": None,
+            "gate_result": gate_result.model_dump(mode="json"),
+            "error": f"Safety guard error: {exc}",
+        }
 
     try:
         submitted_order = client.submit_order(order_request)

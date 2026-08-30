@@ -460,6 +460,28 @@ def _fetch_hv_20(symbol: str) -> Optional[float]:
         prices = bars.df["close"].dropna()
         return _annualized_hv(prices, window=20)
     except Exception as exc:
+        # The default feed is SIP, which a free data plan may not query for
+        # recent bars ("subscription does not permit querying recent SIP
+        # data"). IEX is available on every plan and is accurate enough for a
+        # 20-day volatility estimate, so fall back rather than returning None:
+        # without HV the strategist has nothing to compare implied vol against.
+        if "SIP" in str(exc) or "subscription" in str(exc).lower():
+            try:
+                from alpaca.data.enums import DataFeed
+
+                bars = get_alpaca_stock_client().get_stock_bars(
+                    StockBarsRequest(
+                        symbol_or_symbols=symbol.upper(),
+                        timeframe=TimeFrame.Day,
+                        start=start,
+                        end=end,
+                        feed=DataFeed.IEX,
+                    )
+                )
+                if bars is not None and not bars.df.empty:
+                    return _annualized_hv(bars.df["close"].dropna(), window=20)
+            except Exception as iex_exc:
+                exc = iex_exc
         print(f"[options_data] HV-20 lookup failed for {symbol}: {exc}")
         return None
 
