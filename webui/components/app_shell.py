@@ -13,6 +13,7 @@ from dash import html
 NAV_ITEMS = [
     ("dashboard", "fa-chart-pie", "Dashboard", None),
     ("analysis", "fa-robot", "Run Analysis", "nav-badge-analysis"),
+    ("agents", "fa-people-group", "Agents", None),
     ("reports", "fa-file-lines", "Agent Reports", None),
     ("options", "fa-layer-group", "Options Desk", "nav-badge-options"),
     ("positions", "fa-wallet", "Positions & Orders", None),
@@ -23,6 +24,7 @@ NAV_ITEMS = [
 PAGE_META = {
     "dashboard": ("Dashboard", "Live account, exposure, and agent activity"),
     "analysis": ("Run Analysis", "Configure the agent team and launch a run"),
+    "agents": ("Agents", "The agent roster, live state, and editable prompts"),
     "reports": ("Agent Reports", "Full audit trail for every agent in the pipeline"),
     "options": ("Options Desk", "Defined-risk options overlay and risk-gate verdicts"),
     "positions": ("Positions & Orders", "Live Alpaca positions, orders, and account detail"),
@@ -138,7 +140,9 @@ def page_container(page_id, children, visible=False):
     return html.Div(
         children,
         id=f"page-{page_id}",
-        className="page",
+        # The page id is also a class so page-scoped CSS can target one page
+        # without leaking its rules to the others.
+        className=f"page page-{page_id}",
         style={"display": "block" if visible else "none"},
     )
 

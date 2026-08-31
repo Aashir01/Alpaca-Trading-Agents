@@ -504,3 +504,118 @@ body {
     .sidebar-footer .pill { padding: 5px; gap: 0; }
     .sidebar-footer .pill span:not(.dot) { display: none; }
 }
+
+/* ------------------------------------------------------------- agents -- */
+/* The roster reads as a pipeline: teams stack in graph order, and each card
+   carries its own live state so a running agent is findable at a glance. */
+.agent-teams { display: flex; flex-direction: column; gap: 22px; }
+
+.agent-team-head {
+    display: flex; align-items: center; gap: 11px;
+    padding-bottom: 9px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+.agent-team-icon { color: var(--accent); font-size: 14px; width: 18px; text-align: center; }
+.agent-team-text { flex: 1 1 auto; min-width: 0; }
+.agent-team-title { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+.agent-team-blurb { color: var(--text-dim); font-size: 11.5px; line-height: 1.45; }
+.agent-team-count {
+    font-family: var(--mono); font-size: 11px; color: var(--text-faint);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 9px; flex: 0 0 auto;
+}
+
+.agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+    gap: 10px;
+}
+
+.agent-card {
+    text-align: left;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 13px 11px;
+    display: flex; flex-direction: column; gap: 5px;
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.agent-card:hover { background: var(--surface-3); border-color: var(--border-strong); }
+.agent-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.agent-card.is-selected { border-color: var(--accent); background: var(--accent-dim); }
+
+.agent-card-top { display: flex; align-items: center; justify-content: space-between; }
+.agent-card-icon { color: var(--accent); font-size: 13px; }
+.agent-card-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.agent-card-role { font-size: 11px; color: var(--text-dim); line-height: 1.45; }
+.agent-card-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 3px; padding-top: 7px; border-top: 1px solid var(--border);
+}
+.agent-card-meta { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.agent-card-state {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-faint);
+}
+.agent-card-state.is-running { color: var(--warn); }
+.agent-card-state.is-done { color: var(--pos); }
+.agent-card-state.is-error { color: var(--neg); }
+
+.agent-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-faint); flex: 0 0 auto;
+}
+.agent-dot.is-running { background: var(--warn); animation: agent-pulse 1.4s ease-in-out infinite; }
+.agent-dot.is-done { background: var(--pos); }
+.agent-dot.is-error { background: var(--neg); }
+@keyframes agent-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.28; } }
+@media (prefers-reduced-motion: reduce) { .agent-dot.is-running { animation: none; } }
+
+.agent-hint { font-size: 11px; color: var(--text-faint); }
+
+/* editor ------------------------------------------------------------- */
+.agent-editor { display: flex; flex-direction: column; gap: 11px; }
+.agent-editor-head { display: flex; flex-direction: column; gap: 3px; }
+.agent-editor-name { font-size: 14px; font-weight: 650; color: var(--text); }
+.agent-editor-role { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
+.agent-prompt-select { width: 100%; }
+
+.agent-prompt-text {
+    width: 100%;
+    min-height: 460px;
+    resize: vertical;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 13px 15px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+    tab-size: 2;
+}
+.agent-prompt-text:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.agent-editor-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.agent-save-btn { flex: 0 0 auto; }
+.agent-prompt-status {
+    font-family: var(--mono); font-size: 11px; color: var(--text-faint);
+    min-width: 0; overflow-wrap: anywhere;
+}
+.agent-prompt-status.is-ok { color: var(--pos); }
+.agent-prompt-status.is-error { color: var(--neg); }
+
+/* The roster is long and the editor is not, so the editor tracks the scroll
+   instead of leaving a column of empty ground beside it. */
+@media (min-width: 1200px) {
+    .page-agents .split-row > .split-col:last-child {
+        position: sticky;
+        top: 18px;
+        align-self: flex-start;
+    }
+}

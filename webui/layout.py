@@ -111,6 +111,12 @@ def _analysis_page():
     ]
 
 
+def _agents_page():
+    from webui.components.agents import create_agents_page
+
+    return create_agents_page()
+
+
 def _reports_page():
     return [
         page_header("Agent Reports", "Full audit trail for every agent in the pipeline"),
@@ -164,6 +170,7 @@ def create_main_layout():
         [
             page_container("dashboard", create_dashboard_page(), visible=True),
             page_container("analysis", _analysis_page()),
+            page_container("agents", _agents_page()),
             page_container("reports", _reports_page()),
             page_container("options", create_options_page()),
             page_container("positions", _positions_page()),
