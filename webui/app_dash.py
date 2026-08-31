@@ -159,6 +159,16 @@ def run_app(port=7860, share=False, server_name="127.0.0.1", debug=False, max_th
     # Optionally also silence Dash's callback exceptions logger
     logging.getLogger("dash.callback").setLevel(logging.ERROR)
     
+    # A multi-day deployment should not be carried by Flask's development
+    # server. waitress is pure Python, runs on Windows and Linux alike, and
+    # needs no extra process manager.
+    if not debug and (os.getenv("WEBUI_PRODUCTION") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        from waitress import serve
+
+        print(f"Serving with waitress on http://{server_name}:{port}")
+        serve(app.server, host=server_name, port=port, threads=max(4, int(max_threads or 4)))
+        return
+
     # Run the app
     app.run(
         port=port,

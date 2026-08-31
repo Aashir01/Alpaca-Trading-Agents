@@ -260,6 +260,38 @@ interpreted as an instruction.
 
 ---
 
+## Deploying
+
+The desk is a long-running stateful process, which rules out most free hosting:
+it must not sleep (a sleeping host takes no trades) and it needs a real disk.
+Recorded IV observations in particular cannot be rebuilt -- Alpaca exposes no
+historical-IV endpoint, so an ephemeral filesystem loses history permanently.
+
+On a fresh Ubuntu VM:
+
+```bash
+bash deploy/setup.sh          # python, uv, deps, systemd unit, daily IV cron
+# create .env, then:
+sudo systemctl start optionsalpha
+python scripts/verify_mcp.py  # confirm the broker path on the new host
+```
+
+`setup.sh` installs `uv` because the Alpaca MCP server is fetched with `uvx`,
+registers a service that restarts on crash and survives reboots, and schedules
+the daily IV snapshot -- a missed day is a day of history you cannot recover.
+
+Two settings matter in a deployment:
+
+| Variable | Why |
+| --- | --- |
+| `WEBUI_PASSWORD` | Required to bind anything but localhost. The UI can start runs, place orders, edit agent prompts and open the API settings, so binding publicly without it is refused at startup rather than served. |
+| `WEBUI_PRODUCTION=true` | Serves through waitress instead of Flask's development server. |
+
+Keep `.env` on the host only. It is gitignored, and so are the timestamped
+`.env.bak.*` copies.
+
+---
+
 ## Configuration
 
 Copy `env.sample` to `.env`. Every variable is documented inline there.
