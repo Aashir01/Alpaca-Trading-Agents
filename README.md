@@ -16,7 +16,8 @@ Built by [@Aashir01](https://github.com/Aashir01) for the
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 [Quick Start](#quick-start) · [How It Works](#how-it-works) · [The Risk Gate](#the-risk-gate) ·
-[The App](#the-app) · [Configuration](#configuration) · [Testing](#testing)
+[MCP Server](#alpaca-mcp-server) · [The App](#the-app) · [Configuration](#configuration) ·
+[Testing](#testing)
 
 </div>
 
@@ -208,18 +209,10 @@ cd Alpaca-Trading-Agents
 
 pip install -r requirements.txt
 
-cp env.sample .env          # add your keys — see Configuration below
-python run_webui_dash.py    # http://localhost:7860
+cp env.sample .env             # add your keys — see Configuration below
+python scripts/verify_mcp.py   # confirm broker access over Alpaca's MCP server
+python run_webui_dash.py       # http://localhost:7860
 ```
-
-Or with Docker:
-
-```bash
-cp env.sample .env
-docker compose up -d --build
-```
-
-Set `HOST_PORT` to use a different host port, e.g. `HOST_PORT=7861 docker compose up -d --build`.
 
 **Web UI options:** `--port PORT`, `--server-name HOST`, `--share`, `--debug`.
 
@@ -436,6 +429,7 @@ tradingagents/
 ├── dataflows/              Alpaca, options chain, news, macro, crypto
 ├── execution/              multi-leg order submission + fail-closed re-check
 ├── safety/                 kill switch, breakers, pre-trade guards
+├── mcp_client/             Alpaca MCP server session + sync facade
 ├── prompts/templates/      46 editable Markdown prompts
 └── backtest/               engine, metrics, signals
 
@@ -444,8 +438,9 @@ webui/
 ├── callbacks/              navigation, dashboard, reports, trading
 └── assets/                 design system stylesheet
 
-scripts/record_iv_history.py    daily ATM IV snapshots
-tests/                          355 offline tests
+scripts/record_iv_history.py    daily ATM IV snapshots (IV rank needs 20)
+scripts/verify_mcp.py           proves broker access runs over MCP
+tests/                          363 offline tests
 ```
 
 Prompts live in `tradingagents/prompts/templates` as plain Markdown — edit them to retune
@@ -470,16 +465,21 @@ and other non-deterministic factors. Do your own due diligence.
 
 ---
 
-## Credits and license
+## License and attribution
 
 Released under the [Apache License 2.0](LICENSE).
 
-This project began as a fork of [AlpacaTradingAgent](https://github.com/huygiatrng/AlpacaTradingAgent),
-which is itself built on the [TradingAgents](https://github.com/TauricResearch/TradingAgents)
-multi-agent framework by Tauric Research. The multi-agent analyst/researcher/risk-debate
-architecture originates there; the options overlay, deterministic risk gate, application
-shell, and dashboard in this repository are my own work. Attribution is retained as Apache
-2.0 requires.
+**Built here:** the options overlay and strategy selection, the deterministic
+risk gate that reprices and vetoes every proposal from live bid/ask, execution
+through Alpaca's official MCP server including multi-leg spreads, the safety
+guard, the IV/HV volatility context, the application shell and dashboard, and
+the test suite.
+
+**Built on:** the multi-agent analyst / researcher / risk-debate architecture in
+`tradingagents/agents/`, which comes from
+[TradingAgents](https://github.com/TauricResearch/TradingAgents) by Tauric
+Research, reached via [AlpacaTradingAgent](https://github.com/huygiatrng/AlpacaTradingAgent).
+That code is Apache 2.0, which requires this notice to travel with it.
 
 ```bibtex
 @misc{xiao2025tradingagentsmultiagentsllmfinancial,
