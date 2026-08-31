@@ -619,3 +619,29 @@ body {
         align-self: flex-start;
     }
 }
+
+/* ------------------------------------------------- approval queue -- */
+.pending-list { display: flex; flex-direction: column; gap: 10px; }
+.pending-card {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    border-radius: var(--radius-sm);
+    padding: 13px 16px;
+}
+.pending-info { min-width: 0; }
+.pending-head { display: flex; align-items: baseline; gap: 10px; }
+.pending-symbol { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
+.pending-decision {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--warn);
+    background: var(--warn-dim); border-radius: 3px; padding: 2px 8px;
+}
+.pending-meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); margin-top: 4px; }
+.pending-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.pending-result {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-dim);
+    padding: 2px 0 6px;
+}

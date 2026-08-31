@@ -207,6 +207,10 @@ DEFAULT_CONFIG = {
     # computes: "swing" (1h/4h/1d, multi-day), "day" (5m/15m/1h, flat by the
     # close) or "scalp" (5m/15m/1h, momentum bursts).
     "trading_horizon": os.getenv("TRADING_HORIZON", "swing").strip().lower(),
+    # "approval" stages the trade and waits for a person; "autonomous" lets the
+    # desk place it unattended. Defaults to approval: unattended execution
+    # should be something you switch on deliberately, not inherit.
+    "execution_mode": os.getenv("EXECUTION_MODE", "approval").strip().lower(),
     "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity

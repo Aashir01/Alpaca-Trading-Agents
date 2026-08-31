@@ -356,6 +356,21 @@ def _core_setup():
             html.Div(
                 [
                     _field(
+                        "Trading horizon",
+                        dbc.RadioItems(
+                            id="trading-horizon",
+                            options=[
+                                {"label": "Swing", "value": "swing"},
+                                {"label": "Day", "value": "day"},
+                                {"label": "Scalp", "value": "scalp"},
+                            ],
+                            value=_configured("trading_horizon", "swing"),
+                            inline=True,
+                            className="segmented-radio",
+                        ),
+                        "stopwatch",
+                    ),
+                    _field(
                         "Research depth",
                         dbc.RadioItems(
                             id="research-depth",
@@ -451,6 +466,21 @@ def _schedule_and_trading():
             ),
             html.Div(id="market-hours-validation", className="config-validation-slot"),
             html.Div(id="scheduling-mode-info", className="config-status-slot"),
+            _field(
+                "Who approves the trade",
+                dbc.RadioItems(
+                    id="execution-mode",
+                    options=[
+                        {"label": "Human in the loop", "value": "approval"},
+                        {"label": "Autonomous", "value": "autonomous"},
+                    ],
+                    value=_configured("execution_mode", "approval"),
+                    inline=True,
+                    className="segmented-radio",
+                ),
+                "user-shield",
+            ),
+            html.Div(id="execution-mode-info", className="config-status-slot"),
             html.Div(
                 [
                     html.Div(

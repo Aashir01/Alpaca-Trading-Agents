@@ -127,6 +127,16 @@ def _reports_page():
 def _positions_page():
     return [
         page_header("Positions & Orders", "Live Alpaca positions, orders, and account detail"),
+        panel(
+            "Awaiting approval",
+            html.Div(id="pending-trades-body"),
+            icon="fa-user-shield",
+            actions=html.Span(
+                "Shown when the run is set to human-in-the-loop",
+                className="agent-hint",
+            ),
+        ),
+        dcc.Interval(id="pending-trades-interval", interval=2000, n_intervals=0),
         dbc.Card(dbc.CardBody([render_alpaca_account_section()])),
     ]
 

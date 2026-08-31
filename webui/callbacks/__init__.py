@@ -16,11 +16,13 @@ from .cost_callbacks import register_cost_callbacks
 from .navigation_callbacks import register_navigation_callbacks
 from .dashboard_callbacks import register_dashboard_callbacks
 from .agent_callbacks import register_agent_callbacks
+from .approval_callbacks import register_approval_callbacks
 
 def register_all_callbacks(app):
     """Register all callback functions with the Dash app"""
     register_status_callbacks(app)
     register_agent_callbacks(app)
+    register_approval_callbacks(app)
     register_chart_callbacks(app)
     register_report_callbacks(app)
     register_control_callbacks(app)
