@@ -28,16 +28,26 @@ def register_chart_callbacks(app):
     @app.callback(
         Output("chart-pagination-container", "children"),
         [Input("app-store", "data"),
-         Input("refresh-interval", "n_intervals")]
+         Input("refresh-interval", "n_intervals"),
+         Input("ticker-input", "value")]
     )
-    def update_chart_symbol_pagination(store_data, n_intervals):
+    def update_chart_symbol_pagination(store_data, n_intervals, ticker_text):
         """Update the symbol pagination buttons for charts"""
-        if not app_state.symbol_states:
-            return html.Div("No symbols available", 
+        # symbol_states only fills once a run starts. Before that, fall back to
+        # what the user has typed, so selecting three symbols does not leave the
+        # chart reporting "No symbols available" next to them.
+        symbols = list(app_state.symbol_states.keys())
+        if not symbols:
+            symbols = [
+                part.strip().upper()
+                for part in str(ticker_text or "").split(",")
+                if part.strip()
+            ]
+        if not symbols:
+            return html.Div("Add a symbol above to preview its chart",
                           className="text-muted text-center",
                           style={"padding": "10px"})
-        
-        symbols = list(app_state.symbol_states.keys())
+
         current_symbol = app_state.current_symbol
         
         # Find active symbol index

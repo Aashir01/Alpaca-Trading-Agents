@@ -1870,7 +1870,10 @@ body {
 
 .analyst-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    /* Five forced columns gave every tile 107px while "Fundamentals" needs 158,
+       so its label was clipped and ran into the next tile. Sizing to content
+       lets the row wrap instead of overlapping. */
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
     gap: 10px;
 }
 
@@ -1882,6 +1885,13 @@ body {
     border-radius: 8px;
     background: var(--bg);
     padding: 0.7rem 0.8rem;
+}
+
+.analyst-tile .analyst-tile-label {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .analyst-checkbox {
@@ -2176,8 +2186,15 @@ body {
     bottom: 0;
     z-index: 5;
     margin-top: 14px;
-    padding-top: 14px;
+    padding-top: 18px;
+    padding-bottom: 14px;
     background: linear-gradient(180deg, rgba(17, 24, 39, 0) 0%, var(--surface) 34%);
+}
+
+/* The bar floats over the panel, so the panel needs room underneath it or the
+   last section's header sits behind the button. */
+.analysis-config-card .config-accordion:last-of-type {
+    margin-bottom: 76px;
 }
 
 .config-primary-action {
