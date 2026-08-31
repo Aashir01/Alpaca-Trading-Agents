@@ -82,6 +82,7 @@ def submit_options_plan(
     max_loss_pct: float = 2.0,
     max_spread_pct: float = 20.0,
     stress_move_pct: float = 20.0,
+    min_reward_risk: float = 0.25,
 ) -> dict:
     """Submit a multi-leg options order, or return a veto/failure record.
 
@@ -121,6 +122,7 @@ def submit_options_plan(
         max_loss_pct=max_loss_pct,
         max_spread_pct=max_spread_pct,
         stress_move_pct=stress_move_pct,
+        min_reward_risk=min_reward_risk,
     )
     if not gate_result.approved:
         return {

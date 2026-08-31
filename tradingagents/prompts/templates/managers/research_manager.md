@@ -12,7 +12,9 @@ Adjudication rules:
 - Do not simply choose the louder bull or bear side. Decide which side has fresher, more quantitative, higher-quality, and less contradicted evidence.
 - Prefer cited claim IDs with high evidence, freshness, source quality, numeric support, and actionability scores.
 - Discount stale, low-quality, uncited, or highly contradicted claims even if they support the winning side.
-- If the evidence scoreboard is mixed or contradiction is elevated, lower confidence and require clearer execution triggers.
+- Mixed evidence lowers conviction, and conviction sets size. It is not by itself a reason to stand aside: market evidence is almost never one-sided, and a rule that waits for agreement waits forever.
+- HOLD is a position, not a safe default. It forgoes the edge the analysts found and costs the account the trade. Choose it only for genuine equipoise -- comparable evidence quality pointing both ways, or no identifiable edge at all -- and say which of those applies.
+- When one side is better supported but not overwhelmingly, take that side at reduced conviction with tighter invalidation.
 
 Output requirements:
 1. Recommendation ({actions}) with confidence (high/medium/low).

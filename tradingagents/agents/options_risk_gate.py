@@ -33,6 +33,7 @@ def evaluate_strategy(
     chain: Mapping[str, Mapping[str, Any]],
     max_loss_pct: float = 2.0,
     max_spread_pct: float = 20.0,
+    min_reward_risk: float = 0.25,
     stress_move_pct: float = 20.0,
 ) -> RiskGateResult:
     """Veto or approve an options strategy.
@@ -44,6 +45,7 @@ def evaluate_strategy(
         chain: map from leg symbol to a quote dict with ``bid`` and ``ask``.
         max_loss_pct: maximum allowed loss as a percent of account equity.
         max_spread_pct: maximum allowed bid-ask spread as a percent of mid price.
+        min_reward_risk: smallest acceptable ratio of best case to max loss.
         stress_move_pct: adverse move, as a percent below the short strike, used
             to size collateralized shorts. A cash-secured put's true worst case
             is the stock going to zero, which is honest but useless as a sizing
@@ -176,6 +178,33 @@ def evaluate_strategy(
                     f"Short leg {short.symbol} is unhedged; only defined-risk spreads are allowed."
                 )
 
+    # Reward floor. Everything above bounds the loss; nothing above asks whether
+    # the trade is worth taking. A structure collecting $8 against $250 of risk
+    # passes every risk check and still loses money over any number of
+    # repetitions, and a malformed structure -- legs that do not add up to the
+    # strategy they are labelled as -- shows up here as a reward near zero.
+    # Collateralized writes are exempt: a cash-secured put's "max loss" is the
+    # stressed move on stock the writer has agreed to own, so its premium will
+    # always look thin against it and the ratio measures the wrong thing.
+    collateralized = proposal.strategy in {
+        OptionsStrategy.CASH_SECURED_PUT,
+        OptionsStrategy.COVERED_CALL,
+    }
+    if (
+        not collateralized
+        and max_loss is not None
+        and max_loss > 0
+        and min_reward_risk > 0
+    ):
+        reward = _max_reward(proposal, per_unit_premium, max_loss)
+        if reward is not None:
+            ratio = reward / max_loss
+            if ratio < min_reward_risk:
+                reasons.append(
+                    f"Reward/risk {ratio:.2f} is below the {min_reward_risk:.2f} floor "
+                    f"(${reward:,.2f} to make against ${max_loss:,.2f} at risk)."
+                )
+
     return RiskGateResult(
         approved=len(reasons) == 0,
         reasons=reasons,
@@ -184,6 +213,31 @@ def evaluate_strategy(
         net_credit_debit=per_unit_premium,
         collateral_required=collateral * qty if collateral is not None else None,
     )
+
+
+def _max_reward(
+    proposal: OptionsStrategyProposal,
+    per_unit_premium: float,
+    max_loss: float,
+) -> Optional[float]:
+    """Best case per spread unit, in dollars, or None when it cannot be derived.
+
+    ``per_unit_premium`` is positive for a debit and negative for a credit. A
+    credit structure's best case is the credit kept. A defined-risk debit
+    structure's best case is the widest strike gap it can capture, less what was
+    paid -- and for verticals and condors max loss and max profit sum to that
+    same gap, which is what makes this computable without per-strategy geometry.
+    """
+    if per_unit_premium < 0:
+        return abs(per_unit_premium)
+
+    strikes = [leg.strike for leg in proposal.legs if leg.strike is not None]
+    if len(strikes) < 2:
+        return None
+    width = (max(strikes) - min(strikes)) * 100.0
+    if width <= 0:
+        return None
+    return max(0.0, width - max_loss)
 
 
 def _compute_risk_metrics(

@@ -196,6 +196,7 @@ def create_options_strategist(llm, config=None):
             max_loss_pct=float(config.get("options_max_loss_pct", 2.0)),
             max_spread_pct=float(config.get("options_max_spread_pct", 20.0)),
             stress_move_pct=float(config.get("options_stress_move_pct", 20.0)),
+            min_reward_risk=float(config.get("options_min_reward_risk", 0.25)),
         )
 
         if not gate_result.approved:

@@ -207,6 +207,10 @@ DEFAULT_CONFIG = {
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
     "options_max_spread_pct": _env_num("OPTIONS_MAX_SPREAD_PCT", 20.0, float),  # Max bid-ask spread as % of mid before a leg is rejected as illiquid
+    # Smallest acceptable best-case/max-loss ratio. Bounding the loss is not the
+    # same as the trade being worth taking: without this a structure collecting
+    # $8 against $250 of risk passes every other check.
+    "options_min_reward_risk": float(os.getenv("OPTIONS_MIN_REWARD_RISK", "0.25")),
     "options_stress_move_pct": _env_num("OPTIONS_STRESS_MOVE_PCT", 20.0, float),  # Adverse move below the short strike used to size collateralized shorts
     "options_max_contracts": _env_num("OPTIONS_MAX_CONTRACTS", 1, int),  # Spread units per trade; the gate still has final say
     "options_min_iv_history_days": _env_num("OPTIONS_MIN_IV_HISTORY_DAYS", 20, int),  # Below this, IV rank is reported but not used as a selection rule
