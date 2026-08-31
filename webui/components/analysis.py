@@ -525,8 +525,20 @@ def run_analysis(
         print(f"[TRADE]   - allow_shorts: {allow_shorts}")
 
         if trade_enabled:
-            print(f"[TRADE] Trading enabled for {ticker}, executing trade with ${trade_amount}")
-            execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
+            # Options-only mode expresses the view purely through the options
+            # overlay and never takes bare equity exposure alongside it. Two
+            # reasons to run it: an equity leg placed next to a spread doubles
+            # up on the same directional call, and a submission judged on
+            # options strategies should not be quietly placing plain stock
+            # orders under the same toggle.
+            from tradingagents.dataflows.config import get_config as _get_config
+
+            options_only = bool((_get_config() or {}).get("options_only_execution", False))
+            if options_only:
+                print(f"[TRADE] Options-only mode for {ticker}; skipping the equity leg")
+            else:
+                print(f"[TRADE] Trading enabled for {ticker}, executing trade with ${trade_amount}")
+                execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
             execute_options_plan_after_analysis(ticker, decision)
         else:
             print(f"[TRADE] Trading disabled for {ticker}, skipping trade execution")
