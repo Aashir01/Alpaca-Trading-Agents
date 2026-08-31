@@ -327,6 +327,34 @@ Qwen/DashScope, GLM/Zhipu, OpenRouter, Ollama, and Azure OpenAI. Each has its ow
 `env.sample`; provider-specific controls (reasoning effort, thinking level, verbosity) are
 preserved.
 
+### Trading horizon
+
+`TRADING_HORIZON` selects the trader persona and the timeframes the technical
+brief computes:
+
+| Horizon | Timeframes | Trader |
+| --- | --- | --- |
+| `swing` (default) | 1h / 4h / 1d | Multi-day holds, the original behaviour |
+| `day` | 5m / 15m / 1h | Opening-range and VWAP rules, flat by the close, 1-7 DTE verticals |
+| `scalp` | 5m / 15m / 1h | Momentum bursts, tighter stops, strict spread filter |
+
+The day-trader rules come from the setup that holds up best in published
+testing: a **15-minute** opening range rather than 5-minute (the shorter range
+mostly captures noise), requiring a close beyond the range, VWAP alignment, a
+rising 20-EMA and relative volume above 1.5x. It sizes off the range height and
+treats time as an invalidation alongside price.
+
+**On `scalp`, one caveat worth stating plainly.** A decision here takes minutes:
+the analysts, researchers and risk team all run before the trader acts. Real
+scalping -- seconds, queue position, a few ticks -- is not reachable at that
+latency, and the persona says so in its own prompt instead of pretending
+otherwise. It trades the shortest horizon this architecture can actually
+support: bursts lasting roughly fifteen minutes to two hours, with a strict
+bid-ask filter because on that horizon the spread is often the whole edge.
+
+Both intraday personas still express the view through defined-risk options, so
+the overlay and the risk gate apply unchanged.
+
 ### Model selection
 
 The defaults are OpenAI model ids. Any other provider needs its own, set in `.env`

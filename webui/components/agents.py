@@ -59,9 +59,12 @@ AGENT_TEAMS = [
         "Turns the research verdict into a sized, executable plan.",
         [
             ("Trader", "fa-user-tie",
-             "Writes entry, invalidation and target as a concrete plan.",
-             ["trader/trader_system", "trader/trader_user_plan",
-              "trader/trader_final_decision", "trader/trader_context"]),
+             "Writes entry, invalidation and target as a concrete plan. "
+             "TRADING_HORIZON swaps its persona: swing by default, or the "
+             "intraday day-trader and scalper prompts below.",
+             ["trader/trader_system", "trader/day_trader", "trader/scalper",
+              "trader/trader_user_plan", "trader/trader_final_decision",
+              "trader/trader_context"]),
             ("Options Strategist", "fa-layer-group",
              "Expresses the view as a defined-risk options structure.",
              ["trader/options_strategy"]),

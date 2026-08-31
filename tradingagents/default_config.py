@@ -203,6 +203,10 @@ DEFAULT_CONFIG = {
     # Express the view through options alone: skip the equity leg that would
     # otherwise be placed alongside the spread under the same trade toggle.
     "options_only_execution": _env_bool("OPTIONS_ONLY_EXECUTION", False),
+    # Which trader persona runs and which timeframes the technical brief
+    # computes: "swing" (1h/4h/1d, multi-day), "day" (5m/15m/1h, flat by the
+    # close) or "scalp" (5m/15m/1h, momentum bursts).
+    "trading_horizon": os.getenv("TRADING_HORIZON", "swing").strip().lower(),
     "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
