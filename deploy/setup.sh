@@ -64,6 +64,11 @@ echo "==> Fetching the application"
 if [ -d "$APP_DIR/.git" ]; then
     git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF"
     git -C "$APP_DIR" checkout -q FETCH_HEAD
+elif [ -f "$APP_DIR/requirements.txt" ]; then
+    # A source tree was placed here by hand -- an unpacked tarball, rsync, or a
+    # bind mount. Private repos have no credentials on a fresh VM, and putting
+    # a token on the box to fetch code we can just copy there is a worse trade.
+    echo "    using the existing source tree in $APP_DIR (no checkout)"
 else
     git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$APP_DIR"
 fi
