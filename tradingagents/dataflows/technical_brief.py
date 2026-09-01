@@ -39,9 +39,20 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # (alpaca_tf_string, lookback_calendar_days)  -- enough bars for 50-period
 # indicators plus some buffer.
 TIMEFRAMES: Dict[str, Tuple[str, int]] = {
+    "5m": ("5Min", 5),        # ~5 sessions of 5m bars ≈ 390 bars
+    "15m": ("15Min", 12),     # ~12 sessions of 15m bars ≈ 312 bars
     "1h": ("1Hour", 30),      # ~30 days of hourly bars ≈ 200 bars
     "4h": ("4Hour", 90),      # ~90 days of 4h bars ≈ 540 bars
     "1d": ("1Day", 200),      # 200 calendar days ≈ 140 trading days
+}
+
+# Which timeframes each horizon reasons over. A day trader handed only 1h/4h/1d
+# bars cannot see an opening range or a VWAP reclaim, so the horizon has to
+# decide this rather than every brief computing the same three.
+HORIZON_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {
+    "swing": ("1h", "4h", "1d"),
+    "day": ("5m", "15m", "1h"),
+    "scalp": ("5m", "15m", "1h"),
 }
 
 
@@ -777,15 +788,23 @@ def generate_signal_summary(
 #  Orchestrator
 # ═════════════════════════════════════════════════════════════════════════
 
-def build_technical_brief(symbol: str, curr_date: str) -> TechnicalBrief:
+def build_technical_brief(
+    symbol: str, curr_date: str, horizon: str = "swing"
+) -> TechnicalBrief:
     """
-    Master function: compute indicators for 1h / 4h / 1d, detect regimes,
-    extract levels, and return a ``TechnicalBrief``.
+    Master function: compute indicators across the horizon's timeframes, detect
+    regimes, extract levels, and return a ``TechnicalBrief``.
+
+    ``horizon`` selects the timeframes: swing reads 1h/4h/1d, while day and
+    scalp read 5m/15m/1h so intraday structure is actually visible.
     """
     dfs_by_tf: Dict[str, pd.DataFrame] = {}
     tf_briefs: List[TimeframeBrief] = []
 
-    for tf_key in ("1h", "4h", "1d"):
+    timeframes = HORIZON_TIMEFRAMES.get(
+        str(horizon or "swing").lower(), HORIZON_TIMEFRAMES["swing"]
+    )
+    for tf_key in timeframes:
         print(f"[TA-BRIEF] Computing indicators for {symbol} @ {tf_key} ...")
         df = compute_indicators(symbol, curr_date, tf_key)
         if df is None:
@@ -814,7 +833,12 @@ def build_technical_brief(symbol: str, curr_date: str) -> TechnicalBrief:
 
     # Raw prices snapshot
     raw_prices = {"last_close": 0.0, "prev_close": 0.0, "daily_change_pct": 0.0}
+    # On an intraday horizon there is no daily frame; fall back to the
+    # slowest timeframe the horizon did compute.
+    # `or` would raise here: a DataFrame has no truth value.
     daily_df = dfs_by_tf.get("1d")
+    if daily_df is None and timeframes:
+        daily_df = dfs_by_tf.get(timeframes[-1])
     if daily_df is not None and len(daily_df) >= 2:
         last_c = float(daily_df["close"].iloc[-1])
         prev_c = float(daily_df["close"].iloc[-2])

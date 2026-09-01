@@ -52,6 +52,25 @@ def load_prompt(name: str) -> str:
     raise PromptTemplateError(f"Prompt template not found: {relative_path.as_posix()}")
 
 
+def save_prompt(name: str, content: str) -> Path:
+    """Write a prompt template back to disk and return the path written.
+
+    Writes to TRADINGAGENTS_PROMPT_DIR when it is set, so an override directory
+    stays the editable copy and the packaged defaults are left intact; without
+    one it edits the shipped template. Reuses the same path checks as loading,
+    so a name cannot escape the template root.
+    """
+    if content is None:
+        raise PromptTemplateError("Prompt content is empty")
+
+    relative_path = _safe_template_path(name)
+    root = _template_roots()[0]
+    path = _resolve_template_path(root, relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 def render_prompt(name: str, **values: Any) -> str:
     """Load and render a prompt template using Python format placeholders."""
 

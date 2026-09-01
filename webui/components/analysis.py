@@ -533,13 +533,31 @@ def run_analysis(
             # orders under the same toggle.
             from tradingagents.dataflows.config import get_config as _get_config
 
-            options_only = bool((_get_config() or {}).get("options_only_execution", False))
-            if options_only:
-                print(f"[TRADE] Options-only mode for {ticker}; skipping the equity leg")
+            cfg = _get_config() or {}
+
+            # Human in the loop: stage the decision and stop. Nothing reaches
+            # the broker until someone approves it on Positions & Orders.
+            # Autonomous is opt-in precisely because this is the line where a
+            # wrong call stops being a bad report and starts being a position.
+            if str(cfg.get("execution_mode", "approval")).lower() != "autonomous":
+                app_state.stage_pending_trade(
+                    ticker,
+                    decision=decision,
+                    allow_shorts=allow_shorts,
+                    trade_amount=trade_amount,
+                )
+                print(
+                    f"[TRADE] {ticker} staged for approval; execution_mode is not "
+                    "'autonomous' so nothing was sent to the broker"
+                )
             else:
-                print(f"[TRADE] Trading enabled for {ticker}, executing trade with ${trade_amount}")
-                execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
-            execute_options_plan_after_analysis(ticker, decision)
+                options_only = bool(cfg.get("options_only_execution", False))
+                if options_only:
+                    print(f"[TRADE] Options-only mode for {ticker}; skipping the equity leg")
+                else:
+                    print(f"[TRADE] Trading enabled for {ticker}, executing ${trade_amount}")
+                    execute_trade_after_analysis(ticker, allow_shorts, trade_amount)
+                execute_options_plan_after_analysis(ticker, decision)
         else:
             print(f"[TRADE] Trading disabled for {ticker}, skipping trade execution")
 

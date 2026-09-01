@@ -146,13 +146,16 @@ def normalize_market_markdown_sections(content):
 
 
 def create_symbol_button(symbol, index, is_active=False):
-    """Create a symbol button for pagination"""
-    return dbc.Button(
+    """Create a symbol button for pagination.
+
+    Styled as a segment of the shared segmented control so the report pager
+    matches the one on the chart panel rather than reading as a second design.
+    """
+    return html.Button(
         symbol,
         id={"type": "symbol-btn", "index": index, "component": "reports"},
-        color="primary" if is_active else "outline-primary",
-        size="sm",
-        className=f"symbol-btn {'active' if is_active else ''}",
+        className=f"seg-btn symbol-btn{' active' if is_active else ''}",
+        n_clicks=0,
     )
 
 
@@ -188,17 +191,13 @@ def create_markdown_content(content, default_message="No content available yet."
             content = normalize_market_markdown_sections(content)
         content = normalize_markdown_tables(content)
     
+    # The shell used to reserve 1000px of blue-grey gradient whether or not a
+    # report existed, so an idle desk showed a screen of empty box in colours
+    # from before the dark theme. It now takes its skin from the stylesheet and
+    # sizes to its content.
     report_component = html.Div(
-        create_rich_report_content(content, min_height="1000px"),
+        create_rich_report_content(content, min_height="0"),
         className="report-content-shell",
-        style={
-            "background": "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
-            "border-radius": "8px",
-            "padding": "1.5rem",
-            "border": "1px solid rgba(51, 65, 85, 0.3)",
-            "color": "#E2E8F0",
-            "line-height": "1.6"
-        }
     )
     
     # If we have actual content and a report type, add a prompt button
@@ -306,18 +305,17 @@ def register_report_callbacks(app):
             buttons.append(create_symbol_button(symbol, i, is_active))
         
         if len(symbols) > 1:
-            # Add navigation info
-            nav_info = html.Div([
-                html.I(className="fas fa-info-circle me-2"),
-                f"Showing {len(symbols)} symbols"
-            ], className="text-muted small text-center mt-2")
-            
-            return html.Div([
-                dbc.ButtonGroup(buttons, className="d-flex flex-wrap justify-content-center"),
-                nav_info
-            ], className="symbol-pagination-wrapper")
+            nav_info = html.Div(
+                f"{len(symbols)} symbols under analysis",
+                className="text-faint",
+                style={"fontSize": "11px", "marginTop": "6px"},
+            )
+            return html.Div(
+                [html.Div(buttons, className="segmented wrap"), nav_info],
+                className="symbol-pagination-wrapper",
+            )
         else:
-            return dbc.ButtonGroup(buttons, className="d-flex justify-content-center")
+            return html.Div(buttons, className="segmented")
 
     @app.callback(
         [Output("report-pagination", "active_page", allow_duplicate=True),
@@ -352,18 +350,17 @@ def register_report_callbacks(app):
                     buttons.append(create_symbol_button(symbol, i, is_active))
                 
                 if len(symbols) > 1:
-                    # Add navigation info
-                    nav_info = html.Div([
-                        html.I(className="fas fa-info-circle me-2"),
-                        f"Showing {len(symbols)} symbols"
-                    ], className="text-muted small text-center mt-2")
-                    
-                    button_container = html.Div([
-                        dbc.ButtonGroup(buttons, className="d-flex flex-wrap justify-content-center"),
-                        nav_info
-                    ], className="symbol-pagination-wrapper")
+                    nav_info = html.Div(
+                        f"{len(symbols)} symbols under analysis",
+                        className="text-faint",
+                        style={"fontSize": "11px", "marginTop": "6px"},
+                    )
+                    button_container = html.Div(
+                        [html.Div(buttons, className="segmented wrap"), nav_info],
+                        className="symbol-pagination-wrapper",
+                    )
                 else:
-                    button_container = dbc.ButtonGroup(buttons, className="d-flex justify-content-center")
+                    button_container = html.Div(buttons, className="segmented")
                 
                 return page_number, page_number, button_container
         

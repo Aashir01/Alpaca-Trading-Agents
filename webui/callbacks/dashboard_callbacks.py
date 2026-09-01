@@ -5,9 +5,24 @@ Alpaca calls are wrapped so a credential or network failure degrades to a clear
 "unavailable" state rather than rendering confident zeros.
 """
 
-from dash import Input, Output, html
+import json
+from pathlib import Path
+
+from dash import ALL, Input, Output, State, ctx, html
 
 from webui.components.app_shell import empty_state
+from webui.components.dashboard import EQUITY_RANGES
+from webui.utils.charts import (
+    create_allocation_donut,
+    create_dte_chart,
+    create_equity_curve,
+    create_exposure_bar,
+    create_payoff_diagram,
+    create_pl_bars,
+    create_signal_history,
+    create_sparkline,
+    empty_figure,
+)
 from webui.utils.state import app_state
 
 # Option symbols are OCC-format and far longer than any equity ticker.
@@ -69,6 +84,45 @@ def _is_option_symbol(symbol):
     return len(symbol) >= _OPTION_SYMBOL_MIN_LEN and symbol[-9:-8] in ("C", "P")
 
 
+def _days_to_expiry(occ_symbol):
+    """Calendar days until an OCC contract expires, or None if unparseable.
+
+    An OCC symbol is ROOT + YYMMDD + C/P + 8-digit strike, so the date always
+    sits in the six characters before the option-type letter.
+    """
+    from datetime import date, datetime as _datetime
+
+    raw = str(occ_symbol or "")
+    if len(raw) < 15:
+        return None
+    try:
+        expiry = _datetime.strptime(raw[-15:-9], "%y%m%d").date()
+    except ValueError:
+        return None
+    return max(0, (expiry - date.today()).days)
+
+
+def _spot_price(symbol):
+    """Last quoted mid for the underlying, used to mark the payoff curve."""
+    if not symbol or not _alpaca_configured():
+        return None
+    try:
+        from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+
+        quote = AlpacaUtils.get_latest_quote(symbol) or {}
+    except Exception:
+        return None
+    bid = quote.get("bid_price") or quote.get("bid") or 0
+    ask = quote.get("ask_price") or quote.get("ask") or 0
+    try:
+        bid, ask = float(bid), float(ask)
+    except (TypeError, ValueError):
+        return None
+    if bid > 0 and ask > 0:
+        return (bid + ask) / 2
+    return bid or ask or None
+
+
 def _alpaca_configured():
     """True when Alpaca credentials are present.
 
@@ -89,26 +143,58 @@ def _alpaca_configured():
         return False
 
 
+# A single dashboard refresh fans out into a dozen callbacks -- KPIs, the
+# equity curve, allocation, exposure, position P/L, the positions table, the
+# orders table, the options tiles -- and every one of them wants the same
+# account snapshot and the same position list. Without this, one 15-second
+# tick becomes a dozen serial Alpaca round trips and the page paints in
+# waves. The window is deliberately shorter than the fastest refresh
+# interval, so nothing on screen is ever a tick behind.
+_CACHE_TTL_SECONDS = 1.5
+_cache = {}
+
+
+def _cached(key, producer, ttl=_CACHE_TTL_SECONDS):
+    """Return ``producer()``, reusing the value for ``ttl`` seconds."""
+    import time
+
+    now = time.monotonic()
+    hit = _cache.get(key)
+    if hit is not None and now - hit[0] < ttl:
+        return hit[1]
+    value = producer()
+    _cache[key] = (now, value)
+    return value
+
+
 def _account():
     if not _alpaca_configured():
         return None, "Alpaca not connected"
-    try:
-        from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 
-        return AlpacaUtils.get_account_info(), None
-    except Exception as exc:
-        return None, str(exc)
+    def fetch():
+        try:
+            from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+
+            return AlpacaUtils.get_account_info(), None
+        except Exception as exc:
+            return None, str(exc)
+
+    return _cached("account", fetch)
 
 
 def _positions():
     if not _alpaca_configured():
         return []
-    try:
-        from tradingagents.dataflows.alpaca_utils import AlpacaUtils
 
-        return AlpacaUtils.get_positions_data() or []
-    except Exception:
-        return []
+    def fetch():
+        try:
+            from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+
+            return AlpacaUtils.get_positions_data() or []
+        except Exception:
+            return []
+
+    return _cached("positions", fetch)
 
 
 def _config():
@@ -118,6 +204,57 @@ def _config():
         return get_config() or {}
     except Exception:
         return {}
+
+
+def _recorded_signal_counts(limit_days=30):
+    """Count completed runs per trade date and final signal, across symbols.
+
+    Reads the same persisted run logs the backtester replays, so the chart and
+    the backtest are looking at one history rather than two. Returns
+    ``({date: {action: count}}, {action: total})``.
+    """
+    from collections import defaultdict
+
+    try:
+        from tradingagents.backtest.signals import normalize_action
+    except Exception:
+        return {}, {}
+
+    results_dir = Path(_config().get("results_dir") or "eval_results")
+    if not results_dir.is_dir():
+        return {}, {}
+
+    per_date = defaultdict(lambda: defaultdict(int))
+    totals = defaultdict(int)
+    for run_path in results_dir.glob("*/TradingAgentsStrategy_logs/runs/*.json"):
+        try:
+            with run_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if payload.get("status") != "completed":
+            continue
+        action = normalize_action((payload.get("summary") or {}).get("final_signal"))
+        trade_date = str(payload.get("trade_date") or "").strip()
+        if not action or not trade_date:
+            continue
+        per_date[trade_date][action] += 1
+        totals[action] += 1
+
+    # Only the recent window: a year of history compressed into a panel-width
+    # bar chart is a texture, not a reading.
+    recent = sorted(per_date)[-limit_days:]
+    return ({date: dict(per_date[date]) for date in recent}, dict(totals))
+
+
+def _signal_counts_cached(limit_days=30):
+    """``_recorded_signal_counts`` behind a longer window.
+
+    It walks every run log on disk, which is far too slow to repeat on each
+    15-second tick and changes only when a run finishes.
+    """
+    return _cached(f"signals:{limit_days}",
+                   lambda: _recorded_signal_counts(limit_days), ttl=30.0)
 
 
 def _delta_node(amount, percent):
@@ -259,71 +396,162 @@ def register_dashboard_callbacks(app):
         [Input("dashboard-interval", "n_intervals")],
     )
     def update_allocation(_n):
-        import plotly.graph_objects as go
-
         positions = _positions()
         info, _ = _account()
         cash = float((info or {}).get("cash") or 0)
 
-        labels, values = [], []
+        slices = []
         for position in positions:
             raw = _parse_money(position.get("Market Value"))
-            value = abs(raw)
-            if value > 0:
+            if abs(raw) > 0:
                 label = str(position.get("Symbol", "?"))[:14]
                 # A short leg contributes exposure, not value; say so in the
                 # legend rather than letting it read as another long.
-                labels.append(f"{label} (short)" if raw < 0 else label)
-                values.append(value)
+                slices.append((f"{label} (short)" if raw < 0 else label, abs(raw)))
         if cash > 0:
-            labels.append("Cash")
-            values.append(cash)
+            slices.append(("Cash", cash))
 
-        layout = dict(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#97A3BA", family="Inter, sans-serif", size=12),
-            margin=dict(l=8, r=8, t=8, b=8),
-            showlegend=True,
-            legend=dict(orientation="v", x=1, xanchor="right", y=0.5,
-                        font=dict(size=11), itemsizing="constant"),
-        )
+        if not slices:
+            if not _alpaca_configured():
+                return empty_figure("Alpaca not connected",
+                                    "Add API keys in Settings to see the book")
+            return empty_figure("No allocation data",
+                                "Holdings and cash appear here once the account is funded")
+        return create_allocation_donut(slices)
 
-        if not values:
-            figure = go.Figure()
-            figure.add_annotation(
-                text="Alpaca not connected" if not _alpaca_configured() else "No allocation data",
-                showarrow=False,
-                font=dict(color="#64708A", size=13),
+    @app.callback(
+        Output("dash-exposure-chart", "figure"),
+        [Input("dashboard-interval", "n_intervals")],
+    )
+    def update_exposure(_n):
+        """Long / short / cash split of the equity, as one stacked row."""
+        info, _ = _account()
+        if info is None:
+            return empty_figure("Alpaca not connected")
+
+        long_value = short_value = 0.0
+        for position in _positions():
+            raw = _parse_money(position.get("Market Value"))
+            if raw >= 0:
+                long_value += raw
+            else:
+                short_value += abs(raw)
+        return create_exposure_bar(long_value, short_value, float(info.get("cash") or 0))
+
+    @app.callback(
+        Output("dash-pl-chart", "figure"),
+        Output("dash-pl-summary", "children"),
+        [Input("dashboard-interval", "n_intervals")],
+    )
+    def update_pl_chart(_n):
+        """Which holdings are carrying the book, and which are bleeding."""
+        if not _alpaca_configured():
+            return empty_figure("Alpaca not connected",
+                                "Add API keys in Settings to see position P/L"), ""
+
+        rows = []
+        for position in _positions():
+            rows.append({
+                "symbol": str(position.get("Symbol", "?"))[:16],
+                "pl": _parse_money(position.get("Total P/L ($)")),
+            })
+        if not rows:
+            return empty_figure("No open positions",
+                                "Position-level P/L appears once the desk holds something"), ""
+
+        winners = sum(1 for r in rows if r["pl"] > 0)
+        losers = sum(1 for r in rows if r["pl"] < 0)
+        summary = f"{winners} up · {losers} down · {len(rows)} held"
+        return create_pl_bars(rows), summary
+
+    @app.callback(
+        Output("dash-equity-chart", "figure"),
+        Output("dash-equity-summary", "children"),
+        Output("kpi-equity-spark", "figure"),
+        [Input("dashboard-interval", "n_intervals"),
+         Input("equity-range-store", "data")],
+    )
+    def update_equity_curve(_n, selected_range):
+        """Account equity over the selected window, from Alpaca's own history."""
+        if not _alpaca_configured():
+            blank = empty_figure("Alpaca not connected",
+                                 "Add API keys in Settings to chart account equity")
+            return blank, "", create_sparkline([])
+
+        from tradingagents.dataflows.alpaca_utils import AlpacaUtils
+
+        window = str(selected_range or "1M").upper()
+        try:
+            history = _cached(f"history:{window}",
+                              lambda: AlpacaUtils.get_portfolio_history(window))
+        except Exception as exc:  # network or credential failure
+            return empty_figure("Portfolio history unavailable", str(exc)), "", create_sparkline([])
+
+        points = history.get("points") or []
+        values = [value for _, value in points]
+        figure = create_equity_curve(points, baseline=values[0] if values else None)
+        spark = create_sparkline(values)
+
+        if len(values) < 2:
+            return figure, [html.Span(
+                "Alpaca reports equity once the account has a funded trading day.",
+                className="text-faint",
+            )], spark
+
+        change = values[-1] - values[0]
+        percent = (change / values[0] * 100) if values[0] else 0.0
+        # A flat list, not a wrapping Span: the caption row is a flex
+        # container, and its gap only reaches its own children.
+        summary = [
+            html.Span(_money(values[-1]), className="chart-caption-value"),
+            html.Span(f"{_signed_money(change)} ({percent:+.2f}%)",
+                      className=f"chart-caption-delta {_tone(change)}"),
+            html.Span(f"over {window}", className="text-faint"),
+        ]
+        return figure, summary, spark
+
+    @app.callback(
+        Output("equity-range-store", "data"),
+        Output("equity-range-buttons", "children"),
+        [Input({"type": "equity-range", "value": ALL}, "n_clicks")],
+        [State("equity-range-store", "data")],
+        prevent_initial_call=True,
+    )
+    def select_equity_range(_clicks, current):
+        """Track the chosen window in a store, so a refresh cannot reset it."""
+        chosen = current or "1M"
+        if ctx.triggered_id and isinstance(ctx.triggered_id, dict):
+            chosen = ctx.triggered_id.get("value", chosen)
+        return chosen, [
+            html.Button(
+                option,
+                id={"type": "equity-range", "value": option},
+                className="seg-btn active" if option == chosen else "seg-btn",
+                n_clicks=0,
             )
-            figure.update_layout(**layout)
-            figure.update_xaxes(visible=False)
-            figure.update_yaxes(visible=False)
-            return figure
+            for option in EQUITY_RANGES
+        ]
 
-        palette = ["#4F8DFD", "#22D07F", "#A78BFA", "#FFB020", "#FF5F5F",
-                   "#38BDF8", "#F472B6", "#34D399", "#FBBF24", "#818CF8"]
-        figure = go.Figure(
-            go.Pie(
-                labels=labels,
-                values=values,
-                hole=0.62,
-                marker=dict(colors=palette[: len(labels)],
-                            line=dict(color="#0E1320", width=2)),
-                textinfo="none",
-                hovertemplate="<b>%{label}</b><br>$%{value:,.2f}<br>%{percent}<extra></extra>",
+    @app.callback(
+        Output("dash-signal-chart", "figure"),
+        Output("dash-signal-summary", "children"),
+        [Input("dashboard-interval", "n_intervals"),
+         Input("medium-refresh-interval", "n_intervals")],
+    )
+    def update_signal_history(_a, _b):
+        """Recorded BUY/SELL/HOLD calls per trading day, across every symbol."""
+        per_date, totals = _signal_counts_cached()
+        if not per_date:
+            return (
+                empty_figure(
+                    "No recorded decisions yet",
+                    "Completed analyses are logged under eval_results/ and charted here",
+                ),
+                "",
             )
-        )
-        total = sum(values)
-        figure.update_layout(
-            **layout,
-            annotations=[dict(
-                text=f"<b>${total:,.0f}</b><br><span style='font-size:11px;color:#64708A'>Allocated</span>",
-                x=0.5, y=0.5, showarrow=False,
-                font=dict(size=17, color="#E9EEF9", family="Inter, sans-serif"),
-            )],
-        )
-        return figure
+        total = sum(totals.values())
+        parts = [f"{count} {action}" for action, count in totals.items() if count]
+        return create_signal_history(per_date), f"{total} runs · " + " · ".join(parts)
 
     @app.callback(
         [Output("dash-pipeline", "children"), Output("dash-pipeline-status", "children")],
@@ -469,12 +697,16 @@ def register_dashboard_callbacks(app):
 
         rows = []
         for order in orders:
-            side = str(order.get("Side", "")).replace("OrderSide.", "").lower()
-            tag = "tag tag-buy" if "buy" in side else "tag tag-sell"
+            # A multi-leg options order carries no Side or Asset of its own --
+            # the legs hold them -- so it is named for what it is rather than
+            # rendered as a "NONE" trade in a "None" symbol.
+            side = str(order.get("Side") or "").replace("OrderSide.", "").lower()
+            tag = "tag tag-buy" if "buy" in side else (
+                "tag tag-sell" if "sell" in side else "tag tag-opt")
             status = str(order.get("Status", "")).replace("OrderStatus.", "").lower()
             rows.append(html.Tr([
-                html.Td(str(order.get("Asset", "")), className="sym"),
-                html.Td(html.Span(side.upper() or "—", className=tag)),
+                html.Td(str(order.get("Asset") or "Multi-leg"), className="sym"),
+                html.Td(html.Span(side.upper() or "SPREAD", className=tag)),
                 html.Td(str(order.get("Order Type", "")).replace("OrderType.", "").lower()),
                 html.Td(f"{_parse_money(order.get('Qty')):g}", className="num"),
                 html.Td(f"{_parse_money(order.get('Filled Qty')):g}", className="num"),
@@ -707,6 +939,66 @@ def register_dashboard_callbacks(app):
             )
 
         return proposal, symbol_label, gate_view, positions_view
+
+    @app.callback(
+        Output("opt-payoff-chart", "figure"),
+        Output("opt-payoff-summary", "children"),
+        [Input("dashboard-interval", "n_intervals"),
+         Input("medium-refresh-interval", "n_intervals")],
+    )
+    def update_options_payoff(_a, _b):
+        """Draw the proposed structure's expiry payoff from the gate's numbers."""
+        plan, symbol = None, ""
+        for candidate_symbol, state in (app_state.symbol_states or {}).items():
+            candidate = state.get("options_trade_plan")
+            if candidate:
+                plan, symbol = candidate, candidate_symbol
+                break
+
+        if not plan:
+            return (
+                empty_figure(
+                    "No approved structure yet",
+                    "The payoff curve is drawn once the risk gate approves a proposal",
+                ),
+                "",
+            )
+
+        gate = plan.get("gate_result") or {}
+        contracts = int(_config().get("options_max_contracts", 1) or 1)
+        figure = create_payoff_diagram(
+            plan.get("legs") or [],
+            gate.get("net_credit_debit"),
+            contracts=contracts,
+            spot=_spot_price(plan.get("symbol") or symbol),
+            strategy=plan.get("strategy", ""),
+        )
+        max_loss = gate.get("max_loss_usd")
+        summary = f"{plan.get('symbol') or symbol} · worst case {_money(max_loss)}" if max_loss else (
+            plan.get("symbol") or symbol
+        )
+        return figure, summary
+
+    @app.callback(
+        Output("opt-dte-chart", "figure"),
+        [Input("dashboard-interval", "n_intervals")],
+    )
+    def update_options_dte(_n):
+        """Time remaining on every open contract, parsed from its OCC symbol."""
+        rows = []
+        for position in _positions():
+            symbol = str(position.get("Symbol") or "")
+            if not _is_option_symbol(symbol):
+                continue
+            days = _days_to_expiry(symbol)
+            if days is None:
+                continue
+            rows.append({"symbol": symbol, "dte": days})
+
+        if not rows:
+            return empty_figure("No open option contracts",
+                                "Expiry runway appears once a spread is filled")
+        return create_dte_chart(rows)
 
     @app.callback(
         Output("opt-iv-history", "children"),

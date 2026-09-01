@@ -4,19 +4,22 @@ webui/components/reports_panel.py - Enhanced reports panel with symbol-based pag
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
+from webui.components.app_shell import panel
 from webui.components.prompt_modal import create_prompt_modal
 from webui.components.tool_outputs_modal import create_tool_outputs_modal
 
 
 def create_symbol_pagination(pagination_id, max_symbols=1):
-    """Create a custom pagination component using symbol names instead of page numbers"""
-    return html.Div(id=f"{pagination_id}-container", 
-                   children=[
-                       html.Div("No symbols available", 
-                               className="text-muted text-center",
-                               style={"padding": "10px"})
-                   ],
-                   className="symbol-pagination-container")
+    """Symbol pager. Filled by the report callbacks; the id is load-bearing."""
+    return html.Div(
+        id=f"{pagination_id}-container",
+        children=html.Div(
+            "No symbols available",
+            className="text-faint",
+            style={"padding": "8px", "fontSize": "12px"},
+        ),
+        className="symbol-pagination-container",
+    )
 
 
 def create_reports_panel():
@@ -219,12 +222,6 @@ def create_reports_panel():
         id="tabs",
         active_tab="market-analysis",
         className="enhanced-tabs",
-        style={
-            "background": "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)",
-            "border-radius": "8px",
-            "padding": "0.5rem",
-            "box-shadow": "0 4px 12px rgba(0, 0, 0, 0.15)"
-        }
     )
 
     # Hidden content containers for backward compatibility with existing callbacks
@@ -242,60 +239,48 @@ def create_reports_panel():
         html.Div(id="final-decision-tab", style={"display": "none"})
     ])
 
-    return dbc.Card(
-        dbc.CardBody([
-            html.Div([
-                html.H4([
-                    html.I(className="fas fa-chart-line me-2"),
-                    "Agent Reports & Audit Trail"
-                ], className="mb-3 report-title"),
-                html.Hr(className="report-divider"),
-            ]),
-            dbc.Row([
-                dbc.Col([
-                    create_symbol_pagination("report-pagination")
-                ], width=8),
-                dbc.Col([
-                    html.Div([
-                        html.I(className="fas fa-chart-bar me-2"),
-                        html.Span(id="current-symbol-report-display", className="symbol-display")
-                    ], className="text-center current-symbol-container"),
-                ], width=4)
-            ], className="mb-3 pagination-row"),
-            tabs,
-            hidden_content_containers,
-            
-            # Prompt Modal
-            create_prompt_modal(),
-            
-            # Tool Outputs Modal
-            create_tool_outputs_modal(),
-            
-            # Global state storage for modal persistence (outside of modal components)
-            html.Div([
+    body = [
+        html.Div(
+            [
+                html.Div(create_symbol_pagination("report-pagination"),
+                         className="chart-toolbar-symbols"),
+                html.Div(
+                    html.Span(id="current-symbol-report-display", className="symbol-display"),
+                    className="chart-toolbar-actions",
+                ),
+            ],
+            className="chart-toolbar",
+        ),
+        tabs,
+        hidden_content_containers,
+        create_prompt_modal(),
+        create_tool_outputs_modal(),
+        # Modal state lives outside the modals so it survives their re-render.
+        html.Div(
+            [
                 dcc.Store(id="global-prompt-modal-state", data={
-                    "is_open": False,
-                    "report_type": None,
-                    "title": "Agent Prompt"
+                    "is_open": False, "report_type": None, "title": "Agent Prompt",
                 }),
                 dcc.Store(id="global-tool-outputs-modal-state", data={
-                    "is_open": False,
-                    "report_type": None,
-                    "title": "Tool Outputs"
-                })
-            ], style={"display": "none"}),
-            
-            # Hidden original pagination component for control callback compatibility
-            html.Div([
-                dbc.Pagination(
-                    id="report-pagination",
-                    max_value=1,
-                    fully_expanded=True,
-                    first_last=True,
-                    previous_next=True,
-                    className="d-none"  # Bootstrap class to hide the element
-                )
-            ], style={"display": "none"})  # Additional CSS hiding
-        ]),
-        className="reports-panel-card mb-4"
-    ) 
+                    "is_open": False, "report_type": None, "title": "Tool Outputs",
+                }),
+            ],
+            style={"display": "none"},
+        ),
+        # The control callbacks drive the real dbc pagination; the visible
+        # symbol buttons above are a skin over it, so it stays mounted.
+        html.Div(
+            dbc.Pagination(
+                id="report-pagination",
+                max_value=1,
+                fully_expanded=True,
+                first_last=True,
+                previous_next=True,
+                className="d-none",
+            ),
+            style={"display": "none"},
+        ),
+    ]
+
+    return panel("Agent Reports & Audit Trail", body, icon="fa-file-lines",
+                 panel_id="reports-panel")

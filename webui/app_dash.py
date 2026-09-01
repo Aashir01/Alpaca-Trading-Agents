@@ -11,6 +11,8 @@ RECENT FIX: Multiple Symbol Page Refresh Issue
 - Users can now refresh the page while analyzing multiple symbols without losing access to all symbol pages
 """
 
+import os
+
 import dash
 import dash_bootstrap_components as dbc
 from flask import Flask
@@ -95,6 +97,8 @@ def create_app():
     # Set app title
     app.title = APP_CONFIG["title"]
 
+    _protect(app)
+
     # Set the layout
     app.layout = create_main_layout()
 
@@ -104,8 +108,43 @@ def create_app():
     return app
 
 
+def _protect(app):
+    """Password-protect the UI when WEBUI_PASSWORD is set.
+
+    The dashboard can start analyses, place live orders, edit the prompts the
+    agents run on, and show the API key settings, so it must not be reachable
+    by anyone who finds the URL. Binding to 0.0.0.0 without this is the whole
+    exposure, which is why run_app refuses that combination outright.
+    """
+    password = (os.getenv("WEBUI_PASSWORD") or "").strip()
+    if not password:
+        return
+    user = (os.getenv("WEBUI_USERNAME") or "trader").strip()
+    try:
+        from dash_auth import BasicAuth
+    except ImportError:
+        print(
+            "[SECURITY] WEBUI_PASSWORD is set but dash-auth is not installed; "
+            "run 'pip install dash-auth'. Refusing to serve unprotected."
+        )
+        raise
+    BasicAuth(app, {user: password})
+    print(f"[SECURITY] Basic auth enabled for user '{user}'")
+
+
 def run_app(port=7860, share=False, server_name="127.0.0.1", debug=False, max_threads=1):
     """Run the TradingAgents Dash Web UI"""
+    # A public bind with no password would let anyone who finds the host place
+    # orders with the account's own credentials. Fail loudly at startup rather
+    # than serve that.
+    public = str(server_name) not in ("127.0.0.1", "localhost", "::1")
+    if public and not (os.getenv("WEBUI_PASSWORD") or "").strip():
+        raise SystemExit(
+            "Refusing to bind "
+            f"{server_name} without a password. "
+            "Set WEBUI_PASSWORD (and optionally WEBUI_USERNAME) in .env first: "
+            "this UI can place trades and read your API settings."
+        )
     
     # Create the app
     app = create_app()
@@ -120,6 +159,16 @@ def run_app(port=7860, share=False, server_name="127.0.0.1", debug=False, max_th
     # Optionally also silence Dash's callback exceptions logger
     logging.getLogger("dash.callback").setLevel(logging.ERROR)
     
+    # A multi-day deployment should not be carried by Flask's development
+    # server. waitress is pure Python, runs on Windows and Linux alike, and
+    # needs no extra process manager.
+    if not debug and (os.getenv("WEBUI_PRODUCTION") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        from waitress import serve
+
+        print(f"Serving with waitress on http://{server_name}:{port}")
+        serve(app.server, host=server_name, port=port, threads=max(4, int(max_threads or 4)))
+        return
+
     # Run the app
     app.run(
         port=port,

@@ -4,7 +4,6 @@ Enhanced with symbol-based pagination
 """
 
 from dash import Input, Output, State, ctx, html, ALL, dash
-import dash_bootstrap_components as dbc
 from datetime import datetime
 
 from webui.utils.state import app_state
@@ -12,13 +11,16 @@ from webui.utils.charts import create_chart, create_welcome_chart
 
 
 def create_symbol_button(symbol, index, is_active=False):
-    """Create a symbol button for pagination"""
-    return dbc.Button(
+    """Create a symbol button for pagination.
+
+    Styled as a segment of the shared segmented control rather than a Bootstrap
+    button, so the symbol pager and the range strip beside it read as one row.
+    """
+    return html.Button(
         symbol,
         id={"type": "symbol-btn", "index": index, "component": "charts"},
-        color="primary" if is_active else "outline-primary",
-        size="sm",
-        className=f"symbol-btn {'active' if is_active else ''}",
+        className=f"seg-btn symbol-btn{' active' if is_active else ''}",
+        n_clicks=0,
     )
 
 
@@ -28,16 +30,28 @@ def register_chart_callbacks(app):
     @app.callback(
         Output("chart-pagination-container", "children"),
         [Input("app-store", "data"),
-         Input("refresh-interval", "n_intervals")]
+         Input("refresh-interval", "n_intervals"),
+         Input("ticker-input", "value")]
     )
-    def update_chart_symbol_pagination(store_data, n_intervals):
+    def update_chart_symbol_pagination(store_data, n_intervals, ticker_text):
         """Update the symbol pagination buttons for charts"""
-        if not app_state.symbol_states:
-            return html.Div("No symbols available", 
-                          className="text-muted text-center",
-                          style={"padding": "10px"})
-        
+        # symbol_states only fills once a run starts. Before that, fall back to
+        # what the user has typed, so selecting three symbols does not leave the
+        # chart reporting "No symbols available" next to them.
         symbols = list(app_state.symbol_states.keys())
+        if not symbols:
+            symbols = [
+                part.strip().upper()
+                for part in str(ticker_text or "").split(",")
+                if part.strip()
+            ]
+        if not symbols:
+            return html.Div(
+                "Add a symbol to preview its chart",
+                className="text-faint",
+                style={"padding": "8px", "fontSize": "12px"},
+            )
+
         current_symbol = app_state.current_symbol
         
         # Find active symbol index
@@ -52,17 +66,18 @@ def register_chart_callbacks(app):
         
         if len(symbols) > 1:
             # Add navigation info
-            nav_info = html.Div([
-                html.I(className="fas fa-chart-line me-2"),
-                f"Charts for {len(symbols)} symbols"
-            ], className="text-muted small text-center mt-2")
-            
-            return html.Div([
-                dbc.ButtonGroup(buttons, className="d-flex flex-wrap justify-content-center"),
-                nav_info
-            ], className="symbol-pagination-wrapper")
+            nav_info = html.Div(
+                f"{len(symbols)} symbols under analysis",
+                className="text-faint",
+                style={"fontSize": "11px", "marginTop": "6px"},
+            )
+
+            return html.Div(
+                [html.Div(buttons, className="segmented wrap"), nav_info],
+                className="symbol-pagination-wrapper",
+            )
         else:
-            return dbc.ButtonGroup(buttons, className="d-flex justify-content-center")
+            return html.Div(buttons, className="segmented")
 
     @app.callback(
         [Output("chart-pagination", "active_page", allow_duplicate=True),
@@ -98,17 +113,18 @@ def register_chart_callbacks(app):
                 
                 if len(symbols) > 1:
                     # Add navigation info
-                    nav_info = html.Div([
-                        html.I(className="fas fa-chart-line me-2"),
-                        f"Charts for {len(symbols)} symbols"
-                    ], className="text-muted small text-center mt-2")
-                    
-                    button_container = html.Div([
-                        dbc.ButtonGroup(buttons, className="d-flex flex-wrap justify-content-center"),
-                        nav_info
-                    ], className="symbol-pagination-wrapper")
+                    nav_info = html.Div(
+                        f"{len(symbols)} symbols under analysis",
+                        className="text-faint",
+                        style={"fontSize": "11px", "marginTop": "6px"},
+                    )
+
+                    button_container = html.Div(
+                        [html.Div(buttons, className="segmented wrap"), nav_info],
+                        className="symbol-pagination-wrapper",
+                    )
                 else:
-                    button_container = dbc.ButtonGroup(buttons, className="d-flex justify-content-center")
+                    button_container = html.Div(buttons, className="segmented")
                 
                 return page_number, page_number, button_container
         
@@ -169,7 +185,7 @@ def register_chart_callbacks(app):
         # Create chart
         try:
             chart_figure = create_chart(symbol, selected_period)
-            symbol_display = f"📈 {symbol.upper()}"
+            symbol_display = symbol.upper()
             
             # Update store data
             updated_store_data = chart_store_data or {}
@@ -182,7 +198,7 @@ def register_chart_callbacks(app):
             
         except Exception as e:
             # print(f"[CHART] Error creating chart for {symbol}: {e}")
-            return create_welcome_chart(), f"❌ Error loading {symbol.upper()}", chart_store_data
+            return create_welcome_chart(), f"Could not load {symbol.upper()}", chart_store_data
 
     @app.callback(
         Output("chart-last-updated", "children"),
@@ -195,7 +211,7 @@ def register_chart_callbacks(app):
         
         try:
             last_updated = datetime.fromisoformat(chart_store_data["last_updated"])
-            return f"Last updated: {last_updated.strftime('%I:%M:%S %p')}"
+            return f"updated {last_updated.strftime('%I:%M:%S %p')}"
         except:
             return ""
 

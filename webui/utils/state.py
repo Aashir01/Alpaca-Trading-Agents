@@ -13,6 +13,9 @@ class AppState:
         # Why the last run stopped. A run that dies before the graph starts
         # leaves every agent PENDING, so without this the UI shows no cause.
         self.last_error = None
+        # Trades the agents decided on but which nobody has approved yet.
+        # symbol -> {decision, allow_shorts, trade_amount, staged_at}
+        self.pending_trades = {}
         self.analysis_trace = []
         self.tool_calls_count = 0
         self.llm_calls_count = 0
@@ -242,6 +245,33 @@ class AppState:
             "session_start_time": session_start,
             "report_timestamps": {}  # Track when each report was last updated
         }
+
+
+    def stage_pending_trade(self, symbol, decision, allow_shorts, trade_amount):
+        """Hold a decided trade for a human to approve or discard."""
+        import datetime
+
+        self.pending_trades[symbol] = {
+            "symbol": symbol,
+            "decision": str(decision),
+            "allow_shorts": bool(allow_shorts),
+            "trade_amount": trade_amount,
+            "staged_at": datetime.datetime.now().strftime("%H:%M:%S"),
+        }
+        self.needs_ui_update = True
+
+    def take_pending_trade(self, symbol):
+        """Remove and return a staged trade, or None if it is already gone.
+
+        Pops rather than reads so a double-click cannot submit the same
+        decision twice.
+        """
+        self.needs_ui_update = True
+        return self.pending_trades.pop(symbol, None)
+
+    def clear_pending_trades(self):
+        self.pending_trades = {}
+        self.needs_ui_update = True
 
     def update_agent_status(self, agent, status, symbol=None):
         """Update the status of an agent for a specific symbol (or current symbol if none specified)."""

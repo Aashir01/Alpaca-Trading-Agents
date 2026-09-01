@@ -1691,10 +1691,14 @@ def get_technical_brief(
     Returns:
         str: JSON string of the TechnicalBrief
     """
+    from .config import get_config
     from .technical_brief import build_technical_brief
 
     try:
-        brief = build_technical_brief(symbol, curr_date)
+        # The horizon decides which timeframes are computed: a day trader given
+        # only 1h/4h/1d bars cannot see an opening range or a VWAP reclaim.
+        horizon = str((get_config() or {}).get("trading_horizon", "swing") or "swing")
+        brief = build_technical_brief(symbol, curr_date, horizon=horizon)
         return brief.model_dump_json(indent=2)
     except Exception as e:
         import json as _json

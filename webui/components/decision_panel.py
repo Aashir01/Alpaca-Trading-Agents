@@ -1,32 +1,23 @@
 """
-webui/components/decision_panel.py - Decision summary panel for the web UI.
+webui/components/decision_panel.py - Final decision summary for the Analysis page.
+
+``decision-summary`` is filled by ``report_callbacks``; the surrounding frame is
+the app's panel rather than a Bootstrap card, so it matches the rest of the desk.
 """
 
-import dash_bootstrap_components as dbc
 from dash import dcc, html
+
+from webui.components.app_shell import panel
+
 
 def create_decision_panel():
     """Create the decision summary panel for the web UI."""
-    return dbc.Card(
-        dbc.CardBody([
-            html.H4("Decision Summary", className="mb-3"),
-            html.Hr(),
-            html.Div(
-                dcc.Markdown(
-                    id="decision-summary",
-                    children="Run analysis to see the final decision summary",
-                    className="dash-markdown"
-                ),
-                style={
-                    "height": "400px", 
-                    "overflowY": "auto",
-                    "overflowX": "hidden",
-                    "border": "1px solid #334155",
-                    "borderRadius": "5px",
-                    "padding": "15px",
-                    "backgroundColor": "#1E293B"
-                }
-            )
-        ]),
-        className="mb-4"
-    ) 
+    body = html.Div(
+        dcc.Markdown(
+            id="decision-summary",
+            children="Run analysis to see the final decision summary",
+            className="dash-markdown",
+        ),
+        className="decision-scroll",
+    )
+    return panel("Decision Summary", body, icon="fa-gavel")

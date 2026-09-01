@@ -3,7 +3,6 @@ Status and refresh-related callbacks for TradingAgents WebUI
 """
 
 from dash import Input, Output, html
-import dash_bootstrap_components as dbc
 
 from webui.utils.state import app_state
 from webui.config.constants import COLORS
@@ -21,7 +20,11 @@ def register_status_callbacks(app):
         """Update the agent status table"""
         current_state = app_state.get_current_state()
         if not current_state:
-            return dbc.Table()
+            return html.Div(
+                "The roster fills in as soon as a run starts.",
+                className="text-faint",
+                style={"fontSize": "12px"},
+            )
 
         # Group agents by team, showing only selected analysts
         teams = {
@@ -75,7 +78,8 @@ def register_status_callbacks(app):
         
         table_body = [html.Tbody(rows)]
         
-        return dbc.Table(table_header + table_body, bordered=True, hover=True, responsive=True, striped=True)
+        # The app's own table skin, not Bootstrap's striped/bordered default.
+        return html.Table(table_header + table_body, className="data-table")
 
     @app.callback(
         [Output("tool-calls-text", "children"),
@@ -85,10 +89,11 @@ def register_status_callbacks(app):
     )
     def update_progress_stats(n_intervals):
         """Update the progress statistics"""
+        # The stat tiles label themselves, so the value is just the count.
         return (
-            f"🧰 Tool Calls: {app_state.tool_calls_count}",
-            f"🤖 LLM Calls: {app_state.llm_calls_count}",
-            f"📊 Generated Reports: {app_state.generated_reports_count}"
+            f"{app_state.tool_calls_count:,}",
+            f"{app_state.llm_calls_count:,}",
+            f"{app_state.generated_reports_count:,}",
         )
 
     @app.callback(

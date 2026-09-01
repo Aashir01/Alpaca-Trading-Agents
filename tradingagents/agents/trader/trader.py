@@ -25,6 +25,27 @@ except ImportError:
         pass
 
 
+
+# The desk runs one trader persona at a time. Each is a prompt, not a separate
+# node: the graph shape stays fixed while the horizon decides how the trader
+# reasons and which timeframes the brief computed for it.
+HORIZON_PERSONAS = {
+    "day": "trader/day_trader",
+    "scalp": "trader/scalper",
+}
+
+
+def _horizon_context() -> str:
+    """Prepend the active persona, or nothing at all on the swing default."""
+    from tradingagents.dataflows.config import get_config
+
+    horizon = str((get_config() or {}).get("trading_horizon", "swing") or "swing").lower()
+    template = HORIZON_PERSONAS.get(horizon)
+    if not template:
+        return ""
+    return render_prompt(template) + "\n\n---\n\n"
+
+
 def create_trader(llm, memory, config=None):
     structured_llm = bind_structured(llm, TraderProposal, "Trader")
     decision_log = TradingMemoryLog(config)
@@ -166,7 +187,7 @@ def create_trader(llm, memory, config=None):
                 "role": "system",
                 "content": render_prompt(
                     "trader/trader_system",
-                    trader_context=trader_context,
+                    trader_context=_horizon_context() + trader_context,
                     past_memory_str=past_memory_str,
                     decision_memory_str=decision_memory_str,
                 ),

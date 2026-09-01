@@ -59,7 +59,12 @@ class BacktestPanelWiringTests(unittest.TestCase):
             index=pd.date_range("2026-01-05", periods=3),
         )
         figure = _build_equity_figure(curve, "AAPL")
-        self.assertEqual(len(figure.data), 1)
+        # One equity line, plus an unnamed marker directly labelling its
+        # endpoint; assert on the series rather than the trace count so
+        # chart decoration can change without failing here.
+        equity_traces = [trace for trace in figure.data if trace.name == "Equity"]
+        self.assertEqual(len(equity_traces), 1)
+        self.assertEqual(list(equity_traces[0].y), [100.0, 101.0, 102.0])
 
         window = {
             "start_date": "2026-01-05",

@@ -757,6 +757,8 @@ def register_control_callbacks(app):
          State("analyst-fundamentals", "value"),
          State("analyst-macro", "value"),
          State("research-depth", "value"),
+         State("trading-horizon", "value"),
+         State("execution-mode", "value"),
          State("llm-provider", "value"),
          State("backend-url", "value"),
          State("output-language", "value"),
@@ -793,6 +795,7 @@ def register_control_callbacks(app):
     )
     def on_control_button_click(n_clicks, button_children, tickers, analysts_market, analysts_social, analysts_news,
                                analysts_fundamentals, analysts_macro, research_depth,
+                               trading_horizon, execution_mode,
                                llm_provider, backend_url, output_language, checkpoint_enabled,
                                quick_llm, deep_llm, quick_llm_custom_model, deep_llm_custom_model,
                                google_thinking_level, anthropic_effort,
@@ -893,9 +896,13 @@ def register_control_callbacks(app):
 
         provider_metadata = get_provider_ui_metadata(llm_provider)
         backend_url = (backend_url or "").strip() if provider_metadata.get("backend_visible") else ""
+        # provider_settings is merged into the run config, so it is also the
+        # seam for run-scoped choices that are not provider specific.
         provider_settings = {
             "google_thinking_level": google_thinking_level or None,
             "anthropic_effort": anthropic_effort or None,
+            "trading_horizon": (trading_horizon or "swing"),
+            "execution_mode": (execution_mode or "approval"),
         }
 
         # Set loop configuration
@@ -928,6 +935,8 @@ def register_control_callbacks(app):
                     'analysts_fundamentals': analysts_fundamentals,
                     'analysts_macro': analysts_macro,
                     'research_depth': research_depth,
+                    'trading_horizon': trading_horizon,
+                    'execution_mode': execution_mode,
                     'allow_shorts': allow_shorts,
                     'llm_provider': llm_provider,
                     'backend_url': backend_url,
