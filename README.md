@@ -18,6 +18,9 @@ Built by [@Aashir01](https://github.com/Aashir01) for the
 [Quick Start](#quick-start) · [How It Works](#how-it-works) · [The Risk Gate](#the-risk-gate) ·
 [The App](#the-app) · [Configuration](#configuration) · [Testing](#testing)
 
+📋 **[Team Brief](docs/TEAM_BRIEF.md)** — how every agent talks to every other agent,
+what the risk gate computes, and the open strategy questions
+
 </div>
 
 ---
