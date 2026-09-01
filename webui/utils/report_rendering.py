@@ -12,6 +12,10 @@ from typing import Optional
 
 from dash import dash_table, dcc, html
 
+# Report tables wear the same tokens as every other table in the app, so a
+# markdown table inside a report does not read as a foreign component.
+from webui.utils.charts import BORDER, NEG, POS, SURFACE_2, TEXT_DIM, TEXT_FAINT, WARN
+
 
 @dataclass
 class MarkdownBlock:
@@ -116,11 +120,10 @@ def table_to_chart_figure(table: TableBlock):
 
 
 def _markdown_component(content: str, min_height: Optional[str] = None):
-    style = {
-        "color": "#E2E8F0",
-        "line-height": "1.6",
-    }
-    if min_height:
+    # Colour and leading come from the stylesheet so reports inherit the app's
+    # type ramp; only an explicitly requested min-height is set inline.
+    style = {}
+    if min_height and min_height != "0":
         style["min-height"] = min_height
     return dcc.Markdown(
         content,
@@ -138,19 +141,21 @@ def _table_component(table: TableBlock):
         {f"col_{i}": row[i] if i < len(row) else "" for i in range(len(table.headers))}
         for row in table.rows
     ]
+    # Zebra striping uses the app's own surface step rather than a blue-grey
+    # left over from the pre-dark-theme palette.
     style_data_conditional = [
-        {"if": {"row_index": "odd"}, "backgroundColor": "rgba(15, 23, 42, 0.55)"},
+        {"if": {"row_index": "odd"}, "backgroundColor": "rgba(19, 19, 24, 0.6)"},
     ]
     for col in columns:
         col_id = col["id"]
         style_data_conditional.extend(
             [
-                {"if": {"filter_query": f'{{{col_id}}} contains "BUY"', "column_id": col_id}, "color": "#34D399", "fontWeight": "700"},
-                {"if": {"filter_query": f'{{{col_id}}} contains "LONG"', "column_id": col_id}, "color": "#34D399", "fontWeight": "700"},
-                {"if": {"filter_query": f'{{{col_id}}} contains "SELL"', "column_id": col_id}, "color": "#F87171", "fontWeight": "700"},
-                {"if": {"filter_query": f'{{{col_id}}} contains "SHORT"', "column_id": col_id}, "color": "#F87171", "fontWeight": "700"},
-                {"if": {"filter_query": f'{{{col_id}}} contains "HOLD"', "column_id": col_id}, "color": "#FBBF24", "fontWeight": "700"},
-                {"if": {"filter_query": f'{{{col_id}}} contains "NEUTRAL"', "column_id": col_id}, "color": "#FBBF24", "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "BUY"', "column_id": col_id}, "color": POS, "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "LONG"', "column_id": col_id}, "color": POS, "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "SELL"', "column_id": col_id}, "color": NEG, "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "SHORT"', "column_id": col_id}, "color": NEG, "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "HOLD"', "column_id": col_id}, "color": WARN, "fontWeight": "700"},
+                {"if": {"filter_query": f'{{{col_id}}} contains "NEUTRAL"', "column_id": col_id}, "color": WARN, "fontWeight": "700"},
             ]
         )
 
@@ -168,18 +173,21 @@ def _table_component(table: TableBlock):
             style_as_list_view=True,
             style_table={"overflowX": "auto", "minWidth": "100%"},
             style_header={
-                "backgroundColor": "#111827",
-                "color": "#F8FAFC",
+                "backgroundColor": SURFACE_2,
+                "color": TEXT_FAINT,
                 "fontWeight": "700",
+                "fontSize": "10px",
+                "letterSpacing": "0.08em",
+                "textTransform": "uppercase",
                 "border": "0",
-                "borderBottom": "1px solid rgba(148, 163, 184, 0.28)",
-                "padding": "12px 14px",
+                "borderBottom": f"1px solid {BORDER}",
+                "padding": "10px 14px",
             },
             style_cell={
-                "backgroundColor": "rgba(30, 41, 59, 0.66)",
-                "color": "#E5E7EB",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "color": TEXT_DIM,
                 "border": "0",
-                "borderBottom": "1px solid rgba(51, 65, 85, 0.55)",
+                "borderBottom": f"1px solid {BORDER}",
                 "fontFamily": "Inter, Segoe UI, sans-serif",
                 "fontSize": "13px",
                 "lineHeight": "1.45",

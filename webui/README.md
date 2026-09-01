@@ -4,16 +4,22 @@ This directory contains the Dash and Flask application for Options Alpha: an app
 
 ## Structure
 
-- `app_dash.py`: Main Dash application with UI components and callbacks
-- `components/`: UI components and analysis functionality
-  - `analysis.py`: Analysis runner and state management
-  - `ui.py`: UI components and helpers
+- `app_dash.py`: Dash application factory, auth, and server entry point
+- `layout.py`: Assembles the shell around the page containers
+- `components/`: Page and panel builders
+  - `app_shell.py`: Sidebar, top bar, `panel()`, `kpi_tile()`, `segmented()`
+  - `dashboard.py`, `options_desk.py`, `analysis.py`, `backtest_panel.py`, …
+- `callbacks/`: One module per surface; all data binding lives here
 - `utils/`: Utility functions
-  - `charts.py`: Chart creation utilities using Plotly
+  - `charts.py`: Every Plotly figure in the app, plus the shared chart theme
+    and the validated categorical palette
+  - `report_rendering.py`: Markdown/table rendering for agent reports
   - `state.py`: Application state management
-  - `styles.py`: UI styling constants
-- `assets/`: Static assets for the Dash application
-  - `custom.css`: Custom CSS styles
+  - `styles.py`: Legacy Gradio-era CSS constants; not used by the Dash UI
+- `assets/`: Stylesheets, served alphabetically by Dash
+  - `custom.css`: Older component styles
+  - `dashboard.css`: Design tokens and the app shell / chart component styles
+    (loaded second, so it wins on ties)
 
 ## Running the Web UI
 
@@ -30,6 +36,24 @@ from webui.app_dash import run_app
 
 run_app(port=7860, debug=True)
 ```
+
+## Charts
+
+Every figure is built in `utils/charts.py` so the app reads as one system.
+Two conventions there are load-bearing:
+
+- **No dual y-axes.** Price and volume are stacked subplot rows sharing one
+  x-axis, never two scales on one plot.
+- **The categorical palette is validated, not eyeballed** — it clears the
+  lightness, chroma, colour-vision-deficiency, and contrast checks against
+  this app's near-black surface. Up/down green/red is a separate polarity
+  scale, kept distinct so a series colour cannot impersonate a P/L sign.
+
+Surfaces: account equity curve with a range selector, portfolio allocation
+donut and long/short/cash composition, unrealized P/L per position, recorded
+decision history, candlestick + volume with EMA overlays, options payoff at
+expiry with breakevens, expiry runway, backtest equity curve, and LLM spend
+per day.
 
 ## Features
 

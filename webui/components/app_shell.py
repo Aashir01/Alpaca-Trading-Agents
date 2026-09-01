@@ -7,7 +7,7 @@ rebuilding the tree. That keeps the entire existing callback surface working
 untouched while giving the app real navigation.
 """
 
-from dash import html
+from dash import dcc, html
 
 # (page id, icon, label, badge id or None)
 NAV_ITEMS = [
@@ -179,8 +179,14 @@ def panel(title, body, icon=None, actions=None, flush=False, panel_id=None):
     )
 
 
-def kpi_tile(label, value_id, icon=None, tone="neutral", delta_id=None, sub_id=None, sub=None):
-    """A single KPI tile. Values are filled by callbacks, not at build time."""
+def kpi_tile(label, value_id, icon=None, tone="neutral", delta_id=None, sub_id=None,
+             sub=None, spark_id=None):
+    """A single KPI tile. Values are filled by callbacks, not at build time.
+
+    ``spark_id`` adds a chrome-free trend line under the number. It is a
+    shape, not a readable series -- the axis it would need lives in the full
+    equity curve below, so the sparkline carries no hover and no labels.
+    """
     children = [
         html.Div(
             ([html.I(className=f"fas {icon}")] if icon else []) + [label],
@@ -194,7 +200,48 @@ def kpi_tile(label, value_id, icon=None, tone="neutral", delta_id=None, sub_id=N
         children.append(html.Div(sub or "", id=sub_id, className="kpi-sub"))
     elif sub:
         children.append(html.Div(sub, className="kpi-sub"))
+    if spark_id:
+        from webui.utils.charts import STATIC_CONFIG, create_sparkline
+
+        children.append(
+            dcc.Graph(
+                id=spark_id,
+                figure=create_sparkline([]),
+                config=STATIC_CONFIG,
+                className="kpi-spark",
+                style={"height": "38px"},
+            )
+        )
     return html.Div(children, className=f"kpi {tone}", id=f"{value_id}-tile")
+
+
+def segmented(group_id, options, active=None):
+    """A segmented control: one row of mutually exclusive range buttons.
+
+    Buttons carry pattern-matching ids so a single callback can serve the whole
+    group, and the active option is tracked in a ``dcc.Store`` beside them —
+    which is what the callback reads, so the selection survives the periodic
+    refresh that also redraws the chart.
+    """
+    active = active or (options[0] if options else None)
+    return html.Div(
+        [
+            dcc.Store(id=f"{group_id}-store", data=active),
+            html.Div(
+                [
+                    html.Button(
+                        option,
+                        id={"type": group_id, "value": option},
+                        className="seg-btn active" if option == active else "seg-btn",
+                        n_clicks=0,
+                    )
+                    for option in options
+                ],
+                id=f"{group_id}-buttons",
+                className="segmented",
+            ),
+        ]
+    )
 
 
 def empty_state(icon, title, hint):

@@ -167,9 +167,12 @@ body {
     position: sticky; top: 0; z-index: 1020;
     display: flex; align-items: center; gap: 18px;
     padding: 0 26px; height: 60px;
-    background: rgba(14, 19, 32, 0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    /* Tinted from the true-black ground, not the old blue-grey surface: a
+       translucent bar over a black page must blur toward black or it reads as
+       a separate, lighter application sitting on top of this one. */
+    background: rgba(6, 6, 8, 0.86);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
     border-bottom: 1px solid var(--border);
 }
 .topbar-title { font-size: 15.5px; font-weight: 650; color: var(--text); }
@@ -506,61 +509,10 @@ body {
 }
 
 /* ------------------------------------------------------------- agents -- */
-/* The roster reads as a pipeline: teams stack in graph order, and each card
-   carries its own live state so a running agent is findable at a glance. */
-.agent-teams { display: flex; flex-direction: column; gap: 22px; }
-
-.agent-team-head {
-    display: flex; align-items: center; gap: 11px;
-    padding-bottom: 9px; margin-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-}
-.agent-team-icon { color: var(--accent); font-size: 14px; width: 18px; text-align: center; }
-.agent-team-text { flex: 1 1 auto; min-width: 0; }
-.agent-team-title { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
-.agent-team-blurb { color: var(--text-dim); font-size: 11.5px; line-height: 1.45; }
-.agent-team-count {
-    font-family: var(--mono); font-size: 11px; color: var(--text-faint);
-    background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: 999px; padding: 2px 9px; flex: 0 0 auto;
-}
-
-.agent-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
-    gap: 10px;
-}
-
-.agent-card {
-    text-align: left;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px 13px 11px;
-    display: flex; flex-direction: column; gap: 5px;
-    cursor: pointer;
-    transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
-}
-.agent-card:hover { background: var(--surface-3); border-color: var(--border-strong); }
-.agent-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.agent-card.is-selected { border-color: var(--accent); background: var(--accent-dim); }
-
-.agent-card-top { display: flex; align-items: center; justify-content: space-between; }
-.agent-card-icon { color: var(--accent); font-size: 13px; }
-.agent-card-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
-.agent-card-role { font-size: 11px; color: var(--text-dim); line-height: 1.45; }
-.agent-card-foot {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-top: 3px; padding-top: 7px; border-top: 1px solid var(--border);
-}
-.agent-card-meta { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
-.agent-card-state {
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
-    text-transform: uppercase; color: var(--text-faint);
-}
-.agent-card-state.is-running { color: var(--warn); }
-.agent-card-state.is-done { color: var(--pos); }
-.agent-card-state.is-error { color: var(--neg); }
+/* The roster is a rail of rows beside the editor; see the master/detail
+   section further down for the row, team, and editor rules. Only the live
+   state dot is defined here, because the pipeline on the dashboard uses it
+   too. */
 
 .agent-dot {
     width: 7px; height: 7px; border-radius: 50%;
@@ -610,16 +562,6 @@ body {
 .agent-prompt-status.is-ok { color: var(--pos); }
 .agent-prompt-status.is-error { color: var(--neg); }
 
-/* The roster is long and the editor is not, so the editor tracks the scroll
-   instead of leaving a column of empty ground beside it. */
-@media (min-width: 1200px) {
-    .page-agents .split-row > .split-col:last-child {
-        position: sticky;
-        top: 18px;
-        align-self: flex-start;
-    }
-}
-
 /* ------------------------------------------------- approval queue -- */
 .pending-list { display: flex; flex-direction: column; gap: 10px; }
 .pending-card {
@@ -644,4 +586,581 @@ body {
 .pending-result {
     font-family: var(--mono); font-size: 11.5px; color: var(--text-dim);
     padding: 2px 0 6px;
+}
+
+/* ===========================================================================
+   Charting surface
+   ---------------------------------------------------------------------------
+   The dashboard is chart-led, so the pieces that frame a chart -- the range
+   strip that scopes it, the caption line that names the number it is about,
+   and the sparkline that previews it inside a KPI -- are first-class
+   components here rather than one-off inline styles.
+   =========================================================================== */
+
+/* -------------------------------------------------- segmented control ----- */
+
+.segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+}
+.segmented.wrap { flex-wrap: wrap; }
+
+.app-content .seg-btn,
+.panel-head .seg-btn,
+.seg-btn {
+    appearance: none;
+    border: none !important;
+    background: transparent !important;
+    color: var(--text-dim) !important;
+    font-family: var(--font);
+    font-size: 11.5px !important;
+    font-weight: 650 !important;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: 6px 11px !important;
+    border-radius: 7px !important;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: none !important;
+    transition: background 0.13s ease, color 0.13s ease;
+}
+.app-content .seg-btn:hover,
+.seg-btn:hover { color: var(--text) !important; background: var(--surface-3) !important; }
+.seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The active segment is a raised chip, not just a colour change: on a dark
+   ground a colour-only state is easy to miss at a glance. */
+.app-content .seg-btn.active,
+.app-content .seg-btn.active:hover,
+.seg-btn.active,
+.seg-btn.active:hover {
+    background: var(--accent-dim) !important;
+    color: #A8C7FF !important;
+    box-shadow: inset 0 0 0 1px rgba(79, 141, 253, 0.36) !important;
+}
+
+/* ------------------------------------------------------ chart captions ---- */
+
+/* A chart's own title bar is its panel head; the caption line underneath
+   carries the reading -- the current value and its change -- so the number a
+   viewer wants is text they can copy, not a pixel they must hover. */
+.chart-caption {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+.chart-caption.mt { margin-top: 14px; }
+.chart-caption:empty { display: none; }
+
+.chart-caption-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+.chart-caption-delta {
+    font-size: 12.5px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Charts sit flush in their panel: plotly draws its own padding, so a second
+   layer of panel padding under a graph reads as a misaligned gap. */
+.panel-body .js-plotly-plot { width: 100% !important; }
+
+/* ------------------------------------------------------- KPI sparkline ---- */
+
+/* A shape, not a series: no axis, no hover, and enough separation from the
+   number above that it reads as supporting evidence rather than decoration. */
+.kpi-spark {
+    margin: 10px -17px -16px;
+    opacity: 0.85;
+    pointer-events: none;
+}
+.kpi:hover .kpi-spark { opacity: 1; }
+
+/* A tile carrying a sparkline needs its footer clear of the curve. */
+.kpi { display: flex; flex-direction: column; }
+.kpi .kpi-spark { margin-top: auto; }
+
+/* ------------------------------------------------------ chart toolbars ---- */
+
+.chart-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.chart-toolbar-symbols { min-width: 0; }
+.chart-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+.symbol-pagination-wrapper { min-width: 0; }
+.seg-btn.symbol-btn { font-family: var(--mono); letter-spacing: 0.01em; }
+
+/* A wide chart deserves more of the row than the panel beside it. */
+.split-col.grow-2 { flex: 2 1 520px; }
+
+/* Panels whose head carries a control need the control to sit tight against
+   the right edge rather than inheriting the title's baseline spacing. */
+.panel-head .segmented { margin: -3px 0; }
+
+/* --------------------------------------------------------- refinements --- */
+
+/* Plotly's own container occasionally reports a stale width during a page
+   switch; pinning the modebar keeps it from floating over the first series. */
+.modebar { background: transparent !important; }
+.modebar-btn path { fill: var(--text-faint) !important; }
+.modebar-btn:hover path { fill: var(--text) !important; }
+
+@media (max-width: 860px) {
+    .chart-toolbar { align-items: flex-start; flex-direction: column; }
+    .kpi-spark { margin-left: -15px; margin-right: -15px; }
+}
+
+/* A panel in a stretched row inherits its neighbour's height; a chart inside
+   it should use that height rather than leaving a band of dead ground under a
+   fixed-height plot. `graph-fill` opts a graph into growing with its panel. */
+.split-row .split-col > .panel > .panel-body { display: flex; flex-direction: column; }
+.split-row .split-col > .panel > .panel-body > .graph-fill { flex: 1 1 auto; min-height: 0; }
+.split-row .split-col > .panel > .panel-body > .graph-fill .js-plotly-plot,
+.split-row .split-col > .panel > .panel-body > .graph-fill .plot-container { height: 100%; }
+
+/* ---------------------------------------------------------- stat row ----- */
+
+/* Three live counters under the run's agent roster. They are a reading, not a
+   chart: the number is the point, so it gets the size and the label recedes. */
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+.stat {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+.stat-label {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--text-faint);
+    margin-bottom: 4px;
+}
+.stat-value { font-size: 12.5px; font-weight: 600; color: var(--text); }
+
+.run-status-line { margin-top: 12px; font-size: 12px; }
+
+.decision-scroll {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+}
+
+.stat-value { font-size: 21px; font-weight: 700; letter-spacing: -0.02em;
+              font-variant-numeric: tabular-nums; line-height: 1.15; }
+.stat-label i { margin-right: 6px; opacity: 0.75; }
+
+/* ------------------------------------------------- positions & orders ---- */
+
+/* The secondary half of a two-line numeric cell: the percentage under the
+   dollar figure, or the order type under the symbol. */
+.pl-sub { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+
+/* A status word with its own dot, so state is never carried by colour alone. */
+.status-inline {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; text-transform: capitalize;
+}
+
+/* Liquidating a position is destructive, so the control says so -- but it sits
+   in a table row and must not shout over the numbers beside it. */
+.danger-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: 1px solid rgba(255, 95, 95, 0.4);
+    color: var(--neg);
+    font-family: var(--font);
+    font-size: 11.5px; font-weight: 650;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.13s ease, border-color 0.13s ease;
+}
+.danger-btn:hover { background: var(--neg-dim); border-color: var(--neg); }
+.danger-btn:focus-visible { outline: 2px solid var(--neg); outline-offset: 1px; }
+
+.orders-pagination { padding: 12px 15px; margin-top: 0; }
+.orders-table-container { padding: 0; }
+.orders-table-body { min-height: 0; }
+.liquidation-status { margin-top: 14px; font-size: 12.5px; }
+
+/* The account tiles sit inside a panel body that already has padding. */
+.panel-body > .kpi-grid { margin-bottom: 0; }
+
+/* A one-paragraph explanation under a panel head: present, but never
+   competing with the data it introduces. */
+.panel-blurb {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 14px;
+    max-width: 78ch;
+}
+.panel-notice:empty { display: none; }
+.panel-notice { margin-bottom: 10px; }
+.panel-action-group { display: flex; align-items: center; gap: 6px; }
+
+/* --------------------------------------------------------------- forms --- */
+
+/* A control row that wraps instead of collapsing: Bootstrap's grid is loaded
+   from a CDN, and these forms must survive it being slow or blocked. */
+.field-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.field { min-width: 0; }
+.field-label {
+    display: block;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-faint);
+    margin-bottom: 6px; min-height: 14px;
+}
+.teach-row {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.teach-row .panel-blurb { flex: 1 1 320px; font-size: 12px; }
+
+/* A denser KPI grid for metric strips inside a panel, where the tiles are a
+   readout rather than the page's headline. */
+.kpi-grid.tight {
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    gap: 10px;
+}
+.kpi-grid.tight .kpi { padding: 12px 13px 13px; }
+.kpi-grid.tight .kpi-value { font-size: 19px; }
+
+/* A label above a table inside a panel that already has a head. */
+.subhead {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-faint);
+    margin: 18px 0 9px;
+}
+
+/* ------------------------------------------------------- agent reports --- */
+
+/* The report body used to reserve 1000px whether or not a run had produced
+   anything, so an idle desk showed a screen-and-a-half of empty box. It now
+   sizes to its content, with a cap so a long report scrolls inside the panel
+   instead of pushing the tab strip off screen. */
+.app-content [id$="-tab-content"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    padding: 18px 20px;
+    min-height: 220px;
+    max-height: 70vh;
+    overflow-y: auto;
+    box-shadow: none;
+}
+.app-content [id$="-tab-content"] .enhanced-markdown-content:hover,
+.app-content [id$="-tab-content"] .debate-content-wrapper:hover {
+    border-color: transparent !important;
+    box-shadow: none;
+}
+
+/* The tab strip is a segmented row over the report body, not a raised card. */
+.app-content .enhanced-tabs .nav-tabs .nav-link.active {
+    background: var(--surface-2);
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+.app-content .enhanced-tabs .nav-tabs .nav-link:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.symbol-display { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+
+/* The report body itself: readable measure, app surface, no fixed height. */
+.report-content-shell {
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 13.5px;
+}
+.report-content-shell .report-renderer > * + * { margin-top: 14px; }
+
+/* The symbol pager is a control strip, not a card: it wraps a segmented
+   control that already carries its own frame. */
+.app-content .symbol-pagination-container {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+.app-content .symbol-pagination-wrapper { align-items: flex-start; }
+
+/* ------------------------------------------------- report typography ----- */
+
+/* Agent reports arrive as markdown, so their headings default to browser
+   sizes -- an <h1> in a report was rendering larger than the page title above
+   it. Scale them into the app's own type ramp and let the hierarchy come from
+   weight and spacing rather than sheer size. */
+.report-content-shell h1,
+.report-content-shell h2,
+.dash-markdown h1,
+.dash-markdown h2 {
+    font-size: 16px !important;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.015em;
+    margin: 22px 0 8px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+}
+.report-content-shell h1:first-child,
+.report-content-shell h2:first-child,
+.dash-markdown h1:first-child,
+.dash-markdown h2:first-child { margin-top: 0; }
+
+.report-content-shell h3, .dash-markdown h3 {
+    font-size: 13.5px !important; font-weight: 700; color: var(--text);
+    margin: 18px 0 6px;
+}
+.report-content-shell h4, .report-content-shell h5, .report-content-shell h6,
+.dash-markdown h4, .dash-markdown h5, .dash-markdown h6 {
+    font-size: 12.5px !important; font-weight: 650; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 16px 0 6px;
+}
+.report-content-shell p, .dash-markdown p { margin: 0 0 11px; }
+.report-content-shell ul, .report-content-shell ol,
+.dash-markdown ul, .dash-markdown ol { margin: 0 0 12px; padding-left: 22px; }
+.report-content-shell li, .dash-markdown li { margin-bottom: 5px; }
+.report-content-shell strong, .dash-markdown strong { color: var(--text); font-weight: 650; }
+.report-content-shell code, .dash-markdown code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px; color: var(--accent-strong);
+}
+.report-content-shell pre, .dash-markdown pre {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 14px; overflow-x: auto;
+}
+.report-content-shell pre code, .dash-markdown pre code {
+    background: none; border: none; padding: 0;
+}
+.report-content-shell blockquote, .dash-markdown blockquote {
+    margin: 0 0 12px; padding: 2px 0 2px 14px;
+    border-left: 2px solid var(--border-strong); color: var(--text-dim);
+}
+.report-content-shell hr, .dash-markdown hr { border-color: var(--border); margin: 18px 0; }
+
+/* ===========================================================================
+   Run Analysis configuration
+   ---------------------------------------------------------------------------
+   The configuration used to be one tall accordion inside a Bootstrap card in
+   a half-width column. It is now three panels across the full page, so these
+   rules give the fields real column counts and retire the card chrome the
+   accordion needed.
+   =========================================================================== */
+
+.config-three-column,
+.config-four-column {
+    display: grid;
+    gap: 14px;
+    align-items: end;
+}
+.config-three-column { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.config-four-column  { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+/* Status lines the callbacks fill in. They collapse when empty, so an
+   unconfigured panel does not reserve a band of blank ground. */
+.config-note-row { display: flex; flex-direction: column; gap: 8px; }
+.config-note-row:empty { display: none; }
+
+.subhead.first { margin-top: 0; }
+
+/* The start button lives in the panel head now. `w-100` is set on the button
+   by the callback that swaps Start for Stop, so the width is capped here
+   rather than by editing that callback's class list. */
+.run-action { width: 168px; }
+.app-content .config-primary-action {
+    font-size: 13px !important;
+    padding: 8px 14px !important;
+}
+
+/* The old sticky action bar floated over whichever section was scrolled
+   behind it; with the button in the panel head there is nothing to float. */
+.config-action-bar { position: static; background: none; padding: 0; margin: 0; }
+.analysis-config-card .config-accordion:last-of-type { margin-bottom: 0; }
+
+/* The run's result line sits under the setup fields, not over them. */
+.result-status { margin-top: 14px; font-size: 12.5px; }
+.result-status:empty { display: none; }
+
+/* Panels supply their own frame, so the config sections inside them drop the
+   card background they used to carry. */
+.panel .config-section-body { gap: 16px; }
+.panel .model-panel {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 15px;
+}
+
+/* Analyst tiles read as one row of toggles rather than five stacked cards. */
+.panel .analyst-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+/* The checkbox stretched to the full tile width, which pushed each analyst's
+   name to the far right and left a gap in the middle of every tile. */
+.panel .analyst-tile-click-target { gap: 10px; padding: 9px 12px; }
+.panel .analyst-checkbox { width: auto; flex: 0 0 auto; }
+.panel .analyst-tile .analyst-tile-label { flex: 1 1 auto; gap: 8px; }
+
+/* Explanatory cards sit beside each other and stay quieter than the controls
+   they describe. */
+.config-note-row.split {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+.panel .config-info-panel { padding: 11px 13px; }
+.panel .config-info-panel h6,
+.panel .config-info-panel .fw-semibold { font-size: 12.5px; }
+
+/* ===========================================================================
+   Agents - master/detail
+   ---------------------------------------------------------------------------
+   Fourteen agents in a fixed rail, the prompt editor taking the rest. The
+   previous two-across card grid gave the descriptions half the page and left
+   the editor -- the reason the page exists -- in a column too narrow to read a
+   system prompt in.
+   =========================================================================== */
+
+.agent-workspace {
+    display: grid;
+    grid-template-columns: 316px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+/* The roster is long and the editor is not, so the rail scrolls inside itself
+   and the editor stays put rather than the page scrolling as one. */
+.agent-rail > .panel { margin-bottom: 0; }
+.agent-rail .panel-body {
+    max-height: calc(100vh - 210px);
+    overflow-y: auto;
+    padding: 13px;
+}
+.agent-detail > .panel { margin-bottom: 0; position: sticky; top: 18px; }
+
+.agent-teams { gap: 16px; }
+.agent-team-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 2px 7px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+.agent-team-head .agent-team-title {
+    flex: 1 1 auto;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-faint);
+    margin: 0;
+}
+.agent-team-icon { font-size: 11px; }
+.agent-team-count { font-size: 10px; padding: 1px 7px; }
+
+.agent-list { display: flex; flex-direction: column; gap: 3px; }
+
+/* Roster rows: the whole row is the hit target, and the left rule is what
+   marks the selected one -- a row this compact cannot afford a fill that
+   competes with the running-state dot. */
+.agent-card {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+}
+.agent-card:hover { background: var(--surface-2); border-color: var(--border); }
+.agent-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.agent-card.is-selected {
+    background: var(--accent-dim);
+    border-color: rgba(79, 141, 253, 0.34);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.agent-row-icon {
+    width: 24px; height: 24px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text-faint);
+    font-size: 11px;
+}
+.agent-card.is-selected .agent-row-icon { background: rgba(79,141,253,0.2); color: var(--accent-strong); }
+
+.agent-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.agent-row-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.agent-row-role {
+    font-size: 10.5px; color: var(--text-faint); line-height: 1.35;
+    /* One line only: the full text is in the row's title attribute and in the
+       editor header once the agent is selected. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.agent-row-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.agent-row-count {
+    font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+    background: var(--surface-2); border-radius: 999px; padding: 1px 6px;
+}
+/* The dot carries the state in the rail; the word stays for assistive tech. */
+.agent-row-meta .agent-card-state {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* editor ------------------------------------------------------------- */
+.agent-editor-bar {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding-bottom: 13px; margin-bottom: 13px;
+    border-bottom: 1px solid var(--border);
+}
+.agent-editor-head { flex: 1 1 260px; min-width: 0; }
+.agent-editor-picker { flex: 0 1 320px; min-width: 220px; }
+.agent-prompt-text { min-height: 520px; }
+
+@media (max-width: 1100px) {
+    .agent-workspace { grid-template-columns: 1fr; }
+    .agent-rail .panel-body { max-height: 420px; }
+    .agent-detail > .panel { position: static; }
+}
+
+/* Team headings stay visible while the rail scrolls, so a row is never
+   orphaned from the team it belongs to. */
+.agent-rail .agent-team-head {
+    position: sticky;
+    top: -1px;
+    z-index: 1;
+    background: var(--surface);
+    padding-top: 6px;
 }

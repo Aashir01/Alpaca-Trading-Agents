@@ -9,7 +9,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import Input, Output, html
 
-from webui.config.constants import COLORS
+from webui.utils.charts import ACCENT, apply_chart_theme, empty_figure
 
 
 def _fmt_usd(value):
@@ -20,28 +20,17 @@ def _fmt_tokens(value):
     return f"{int(value or 0):,}"
 
 
-def _summary_card(label, text, color=None):
-    return dbc.Col(
-        dbc.Card(
-            dbc.CardBody(
-                [
-                    html.Div(label, className="text-muted small"),
-                    html.Div(
-                        text,
-                        style={
-                            "color": color or COLORS["text"],
-                            "fontSize": "1.3rem",
-                            "fontWeight": 600,
-                        },
-                    ),
-                ],
-                className="p-2 text-center",
-            ),
-            style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}"},
-        ),
-        md=2,
-        xs=6,
-        className="mb-2",
+def _summary_card(label, text, tone="neutral"):
+    """One cost figure, wearing the same KPI tile the rest of the app uses."""
+    value_class = "kpi-value sm"
+    if tone in ("pos", "neg"):
+        value_class += f" text-{tone}"
+    return html.Div(
+        [
+            html.Div(label, className="kpi-label"),
+            html.Div(text, className=value_class),
+        ],
+        className=f"kpi {tone}",
     )
 
 
@@ -54,32 +43,39 @@ def _budget_text():
         used = guard.llm_tokens_used()
         budget = float(guard.config.get("daily_llm_token_budget", 0) or 0)
         if budget > 0:
-            return f"{used:,} / {budget:,.0f}", (
-                COLORS["error"] if used >= budget else COLORS["completed"]
-            )
-        return f"{used:,} / ∞", COLORS["text"]
+            return f"{used:,} / {budget:,.0f}", ("neg" if used >= budget else "pos")
+        return f"{used:,} / ∞", "neutral"
     except Exception:
-        return "—", COLORS["pending"]
+        return "—", "neutral"
 
 
 def _build_daily_figure(per_day):
+    """One series, one colour: the bar length already carries the magnitude."""
     days = sorted(per_day)
+    # A local or self-hosted model has no configured price, so every bar is
+    # zero and the chart renders as an empty grid. Say why instead.
+    if not any(per_day[d]["cost_usd"] for d in days):
+        return empty_figure(
+            "No priced spend recorded",
+            "These runs used models with no configured price — see unpriced tokens above",
+        )
     figure = go.Figure(
         go.Bar(
             x=days,
             y=[per_day[d]["cost_usd"] for d in days],
-            marker_color=COLORS["primary"],
+            marker=dict(color=ACCENT, line=dict(width=0)),
+            hovertemplate="%{x}<br><b>$%{y:,.2f}</b> estimated<extra></extra>",
         )
     )
     figure.update_layout(
-        title="Estimated LLM cost per day",
-        template="plotly_dark",
-        paper_bgcolor=COLORS["card"],
-        plot_bgcolor=COLORS["card"],
-        margin={"l": 40, "r": 20, "t": 40, "b": 30},
-        yaxis={"title": "USD", "tickformat": ",.2f"},
+        margin={"l": 58, "r": 18, "t": 16, "b": 32},
+        yaxis={"title": "USD", "tickformat": ",.2f", "tickprefix": "$", "rangemode": "tozero"},
         showlegend=False,
+        bargap=0.4,
+        height=260,
     )
+    apply_chart_theme(figure)
+    figure.update_layout(margin={"l": 58, "r": 18, "t": 16, "b": 32})
     return figure
 
 
@@ -90,11 +86,11 @@ def _build_symbol_table(per_symbol, returns_by_symbol):
         html.Tr(
             [
                 html.Th("Symbol"),
-                html.Th("Runs"),
-                html.Th("Tokens"),
-                html.Th("Est. cost"),
-                html.Th("Resolved decisions"),
-                html.Th("Avg realized return"),
+                html.Th("Runs", className="num"),
+                html.Th("Tokens", className="num"),
+                html.Th("Est. cost", className="num"),
+                html.Th("Resolved decisions", className="num"),
+                html.Th("Avg realized return", className="num"),
             ]
         )
     )
@@ -104,27 +100,24 @@ def _build_symbol_table(per_symbol, returns_by_symbol):
         outcome = returns_by_symbol.get(symbol) or {}
         avg = outcome.get("avg_return")
         avg_text = "—" if avg is None else f"{avg:+.2%}"
-        avg_color = (
-            COLORS["pending"]
-            if avg is None
-            else (COLORS["completed"] if avg > 0 else COLORS["error"])
-        )
+        avg_class = "num" if avg is None else (
+            "num text-pos" if avg > 0 else "num text-neg")
         rows.append(
             html.Tr(
                 [
-                    html.Td(symbol),
-                    html.Td(stats["runs"]),
-                    html.Td(_fmt_tokens(stats["total_tokens"])),
-                    html.Td(_fmt_usd(stats["cost_usd"])),
-                    html.Td(outcome.get("resolved", 0)),
-                    html.Td(avg_text, style={"color": avg_color}),
+                    html.Td(symbol, className="sym"),
+                    html.Td(stats["runs"], className="num"),
+                    html.Td(_fmt_tokens(stats["total_tokens"]), className="num"),
+                    html.Td(_fmt_usd(stats["cost_usd"]), className="num"),
+                    html.Td(outcome.get("resolved", 0), className="num"),
+                    html.Td(avg_text, className=avg_class),
                 ]
             )
         )
     return html.Div(
         [
-            html.H6("Per symbol — cost vs realized outcome", className="mt-2"),
-            dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True, size="sm", striped=True),
+            html.Div("Per symbol — cost vs realized outcome", className="subhead"),
+            html.Table([header, html.Tbody(rows)], className="data-table"),
         ]
     )
 
@@ -136,9 +129,9 @@ def _build_model_table(per_model):
         html.Tr(
             [
                 html.Th("Model"),
-                html.Th("Input tokens"),
-                html.Th("Output tokens"),
-                html.Th("Est. cost"),
+                html.Th("Input tokens", className="num"),
+                html.Th("Output tokens", className="num"),
+                html.Th("Est. cost", className="num"),
             ]
         )
     )
@@ -149,17 +142,17 @@ def _build_model_table(per_model):
         rows.append(
             html.Tr(
                 [
-                    html.Td(model),
-                    html.Td(_fmt_tokens(stats["input_tokens"])),
-                    html.Td(_fmt_tokens(stats["output_tokens"])),
-                    html.Td(cost_text),
+                    html.Td(model, className="sym"),
+                    html.Td(_fmt_tokens(stats["input_tokens"]), className="num"),
+                    html.Td(_fmt_tokens(stats["output_tokens"]), className="num"),
+                    html.Td(cost_text, className="num"),
                 ]
             )
         )
     return html.Div(
         [
-            html.H6("Per model", className="mt-2"),
-            dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True, size="sm", striped=True),
+            html.Div("Per model", className="subhead"),
+            html.Table([header, html.Tbody(rows)], className="data-table"),
         ]
     )
 
@@ -180,7 +173,8 @@ def register_cost_callbacks(app):
     )
     def refresh_cost_panel(n_clicks):
         hidden = {"display": "none"}
-        empty = go.Figure()
+        empty = empty_figure("No recorded LLM spend yet",
+                             "Run an analysis, then refresh to attribute its cost")
         try:
             from tradingagents.dataflows.config import get_config
             from tradingagents.llm_cost import (
@@ -213,16 +207,16 @@ def register_cost_callbacks(app):
             )
             return alert, empty, hidden, None, None
 
-        budget_text, budget_color = _budget_text()
-        cards = dbc.Row(
+        budget_text, budget_tone = _budget_text()
+        cards = html.Div(
             [
                 _summary_card("Analyses", f"{totals['runs']:,}"),
                 _summary_card("Total tokens", _fmt_tokens(totals["total_tokens"])),
-                _summary_card("Est. cost", _fmt_usd(totals["cost_usd"]), COLORS["primary"]),
+                _summary_card("Est. cost", _fmt_usd(totals["cost_usd"])),
                 _summary_card("Unpriced tokens", _fmt_tokens(totals["unpriced_tokens"])),
-                _summary_card("Today's tokens / budget", budget_text, budget_color),
+                _summary_card("Today's tokens / budget", budget_text, budget_tone),
             ],
-            className="g-2",
+            className="kpi-grid tight",
         )
         figure = _build_daily_figure(aggregates["per_day"])
         symbol_table = _build_symbol_table(aggregates["per_symbol"], returns_by_symbol)

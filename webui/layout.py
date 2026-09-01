@@ -19,7 +19,11 @@ from webui.components.app_shell import (
 )
 from webui.components.backtest_panel import create_backtest_panel
 from webui.components.chart_panel import create_chart_panel
-from webui.components.config_panel import create_config_panel
+from webui.components.config_panel import (
+    create_execution_panel,
+    create_models_panel,
+    create_run_setup_panel,
+)
 from webui.components.cost_panel import create_cost_panel
 from webui.components.dashboard import create_dashboard_page
 from webui.components.decision_panel import create_decision_panel
@@ -93,21 +97,28 @@ window.addEventListener('message', function(event) {
 
 
 def _analysis_page():
+    # Top-down, in the order a run is actually driven: set it up, watch it
+    # work, read the call, and only then the settings that are configured once
+    # and rarely touched again. The old layout put the entire configuration in
+    # one narrow column beside the chart, which left the run controls buried
+    # halfway down a 2,000px scroll and the right-hand column half empty.
+    #
     # The shell's own grid classes are used instead of the Bootstrap grid:
     # Bootstrap is loaded from a CDN, and the layout should not collapse when
     # that CDN is slow, blocked, or unavailable offline.
     return [
         page_header("Run Analysis", "Configure the agent team and launch a run"),
+        create_run_setup_panel(),
         html.Div(
             [
-                html.Div(create_config_panel(), className="split-col stack"),
-                html.Div(
-                    [create_chart_panel(), create_status_panel(), create_decision_panel()],
-                    className="split-col stack",
-                ),
+                html.Div(create_chart_panel(), className="split-col grow-2"),
+                html.Div(create_status_panel(), className="split-col"),
             ],
             className="split-row",
         ),
+        create_decision_panel(),
+        create_execution_panel(),
+        create_models_panel(),
     ]
 
 
@@ -137,7 +148,7 @@ def _positions_page():
             ),
         ),
         dcc.Interval(id="pending-trades-interval", interval=2000, n_intervals=0),
-        dbc.Card(dbc.CardBody([render_alpaca_account_section()])),
+        render_alpaca_account_section(),
     ]
 
 
