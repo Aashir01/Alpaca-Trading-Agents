@@ -13,8 +13,19 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Aashir01/Alpaca-Trading-Agents.git}"
 REPO_REF="${REPO_REF:-main}"
-APP_DIR="${APP_DIR:-$HOME/options-alpha}"
+# A systemd service cannot run out of a home directory under SELinux: files
+# there are labelled user_home_t, which init_t may neither read (so the
+# EnvironmentFile fails) nor write (so the log file fails). /opt is usr_t and
+# works, so it is the default wherever SELinux is enforcing.
+if [ -z "${APP_DIR:-}" ]; then
+    if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then
+        APP_DIR="/opt/options-alpha"
+    else
+        APP_DIR="$HOME/options-alpha"
+    fi
+fi
 SERVICE_NAME="optionsalpha"
+RUN_USER="${SUDO_USER:-$USER}"
 # Free-tier shapes ship as little as 512 MB of RAM. Resolving this dependency
 # tree needs several times that, and pip will wedge the whole box rather than
 # fail cleanly, so swap is provisioned before anything heavy runs.
@@ -61,6 +72,10 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "==> Fetching the application"
+if [ ! -d "$APP_DIR" ]; then
+    sudo mkdir -p "$APP_DIR"
+    sudo chown "$RUN_USER:$RUN_USER" "$APP_DIR"
+fi
 if [ -d "$APP_DIR/.git" ]; then
     git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF"
     git -C "$APP_DIR" checkout -q FETCH_HEAD
@@ -82,6 +97,29 @@ echo "==> Installing Python dependencies"
 # being OOM-killed.
 ./.venv/bin/pip install -q --no-cache-dir -r requirements.txt
 
+# chromadb refuses to import against sqlite < 3.35, and Oracle Linux 9 ships
+# 3.34.1 with no newer package. pysqlite3-binary has no aarch64 wheel, so the
+# library is built here and the interpreter is pointed at it through
+# LD_LIBRARY_PATH -- no application code has to know about any of this.
+SQLITE_PREFIX="/opt/sqlite"
+sqlite_ver=$(./.venv/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)')
+if [ "$(printf '%s
+3.35.0
+' "$sqlite_ver" | sort -V | head -1)" != "3.35.0" ]    && [ ! -e "$SQLITE_PREFIX/lib/libsqlite3.so.0" ]; then
+    echo "==> System sqlite is ${sqlite_ver}; building ${SQLITE_VERSION:-3.46.1} for chromadb"
+    SQLITE_TARBALL="${SQLITE_TARBALL:-https://www.sqlite.org/2024/sqlite-autoconf-3460100.tar.gz}"
+    tmp=$(mktemp -d)
+    curl -fsSL -o "$tmp/sqlite.tar.gz" "$SQLITE_TARBALL"
+    tar -xzf "$tmp/sqlite.tar.gz" -C "$tmp"
+    ( cd "$tmp"/sqlite-autoconf-*       && ./configure --prefix="$SQLITE_PREFIX" --disable-static CFLAGS=-O2 >/dev/null       && make -j"$(nproc)" >/dev/null       && sudo make install >/dev/null )
+    rm -rf "$tmp"
+fi
+if [ -e "$SQLITE_PREFIX/lib/libsqlite3.so.0" ]; then
+    SQLITE_ENV="Environment=LD_LIBRARY_PATH=${SQLITE_PREFIX}/lib"
+else
+    SQLITE_ENV=""
+fi
+
 echo "==> Registering the systemd service"
 UV_BIN_DIR="$HOME/.local/bin"
 # firewalld ships enabled on Oracle Linux and blocks the UI port; opening it
@@ -98,16 +136,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${USER}
+User=${RUN_USER}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
 Environment=WEBUI_PRODUCTION=true
+# Without this, Python block-buffers stdout when it is a pipe, so the startup
+# banner and every print sit in the buffer instead of reaching the journal.
+Environment=PYTHONUNBUFFERED=1
+${SQLITE_ENV}
 Environment=PATH=${UV_BIN_DIR}:/usr/local/bin:/usr/bin:/bin
 ExecStart=${APP_DIR}/.venv/bin/python run_webui_dash.py --server-name 0.0.0.0 --port 7860
 Restart=always
 RestartSec=10
-StandardOutput=append:${APP_DIR}/logs/app.log
-StandardError=append:${APP_DIR}/logs/app.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
