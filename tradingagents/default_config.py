@@ -214,6 +214,14 @@ DEFAULT_CONFIG = {
     "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
+    # Exit management for open options structures (position_manager.py). The
+    # risk gate bounds what a new position may lose; these bound how long a
+    # position that is already open is allowed to keep losing it.
+    "options_exit_manager_enabled": _env_bool("OPTIONS_EXIT_MANAGER_ENABLED", True),
+    "options_take_profit_pct": _env_num("OPTIONS_TAKE_PROFIT_PCT", 0.35, float),  # Close once this fraction of the premium is captured
+    "options_stop_loss_multiple": _env_num("OPTIONS_STOP_LOSS_MULTIPLE", 1.5, float),  # Credit structures: stop at this multiple of the credit received
+    "options_debit_stop_pct": _env_num("OPTIONS_DEBIT_STOP_PCT", 0.5, float),  # Debit structures: stop after losing this fraction of the premium paid
+    "options_close_dte": _env_num("OPTIONS_CLOSE_DTE", 21, int),  # Close at this many days to expiry, before gamma dominates
     "options_max_spread_pct": _env_num("OPTIONS_MAX_SPREAD_PCT", 20.0, float),  # Max bid-ask spread as % of mid before a leg is rejected as illiquid
     # Smallest acceptable best-case/max-loss ratio. Bounding the loss is not the
     # same as the trade being worth taking: without this a structure collecting

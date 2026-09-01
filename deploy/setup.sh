@@ -159,6 +159,41 @@ mkdir -p "${APP_DIR}/logs"
 sudo systemctl daemon-reload
 sudo systemctl enable "${SERVICE_NAME}"
 
+# Exits have to fire on a clock of their own. Running them inside the agent
+# graph would mean a stop only triggers when an analysis happens to run, which
+# is not a stop. The script asks Alpaca whether the market is open, so the
+# timer can fire freely without piling up after-hours rejections.
+echo "==> Registering the exit-manager timer"
+sudo tee "/etc/systemd/system/${SERVICE_NAME}-exits.service" >/dev/null <<UNIT
+[Unit]
+Description=Options Alpha position exit manager
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=${RUN_USER}
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+Environment=PYTHONUNBUFFERED=1
+${SQLITE_ENV}
+ExecStart=${APP_DIR}/.venv/bin/python scripts/manage_positions.py
+UNIT
+
+sudo tee "/etc/systemd/system/${SERVICE_NAME}-exits.timer" >/dev/null <<UNIT
+[Unit]
+Description=Run the Options Alpha exit manager every 15 minutes
+
+[Timer]
+OnCalendar=Mon-Fri *:00/15
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now "${SERVICE_NAME}-exits.timer"
+
 # IV rank needs one observation per day and Alpaca exposes no historical-IV
 # endpoint, so a missed day is a day that cannot be recovered.
 echo "==> Scheduling the daily IV snapshot"
