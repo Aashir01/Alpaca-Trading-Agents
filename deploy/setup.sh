@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision a fresh Ubuntu VM to run Options Alpha 24/7.
+# Provision a fresh Ubuntu or Oracle Linux / RHEL VM to run Options Alpha 24/7.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Aashir01/Alpaca-Trading-Agents/main/deploy/setup.sh | bash
 #
@@ -12,12 +12,43 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Aashir01/Alpaca-Trading-Agents.git}"
+REPO_REF="${REPO_REF:-main}"
 APP_DIR="${APP_DIR:-$HOME/options-alpha}"
 SERVICE_NAME="optionsalpha"
+# Free-tier shapes ship as little as 512 MB of RAM. Resolving this dependency
+# tree needs several times that, and pip will wedge the whole box rather than
+# fail cleanly, so swap is provisioned before anything heavy runs.
+SWAP_GB="${SWAP_GB:-4}"
+SWAPFILE="/swapfile-optionsalpha"
+
+total_ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+if [ "$total_ram_mb" -lt 1900 ] && [ ! -f "$SWAPFILE" ]; then
+    echo "==> Only ${total_ram_mb}MB RAM: adding ${SWAP_GB}G of swap first"
+    sudo fallocate -l "${SWAP_GB}G" "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=$((SWAP_GB*1024)) status=none
+    sudo chmod 600 "$SWAPFILE"
+    sudo mkswap -q "$SWAPFILE" >/dev/null
+    sudo swapon "$SWAPFILE"
+    grep -q "$SWAPFILE" /etc/fstab || echo "$SWAPFILE none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+fi
 
 echo "==> Installing system packages"
-sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-venv python3-pip git curl
+if command -v dnf >/dev/null 2>&1; then
+    # Oracle Linux / RHEL / Rocky. The distro python is 3.9 on OL9 and this
+    # project needs 3.10+, so a parallel-installable interpreter is used.
+    PY_PKG="${PY_PKG:-python3.11}"
+    sudo dnf install -y -q --setopt=install_weak_deps=False         "$PY_PKG" "${PY_PKG}-pip" "${PY_PKG}-devel" git curl gcc
+    PYTHON_BIN="$(command -v "$PY_PKG")"
+else
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq python3 python3-venv python3-pip git curl
+    PYTHON_BIN="$(command -v python3)"
+fi
+
+python_ok=$("$PYTHON_BIN" -c 'import sys; print(1 if sys.version_info >= (3, 10) else 0)')
+if [ "$python_ok" != "1" ]; then
+    echo "ERROR: $PYTHON_BIN is $("$PYTHON_BIN" -V); this project needs Python 3.10 or newer." >&2
+    exit 1
+fi
 
 # The Alpaca MCP server is fetched on demand with uvx, so uv has to exist for
 # the broker path to work at all.
@@ -31,19 +62,29 @@ fi
 
 echo "==> Fetching the application"
 if [ -d "$APP_DIR/.git" ]; then
-    git -C "$APP_DIR" pull --ff-only
+    git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF"
+    git -C "$APP_DIR" checkout -q FETCH_HEAD
 else
-    git clone --depth 1 "$REPO_URL" "$APP_DIR"
+    git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$APP_DIR"
 fi
 cd "$APP_DIR"
 
 echo "==> Installing Python dependencies"
-python3 -m venv .venv
+"$PYTHON_BIN" -m venv .venv
 ./.venv/bin/pip install -q --upgrade pip
-./.venv/bin/pip install -q -r requirements.txt
+# --no-cache-dir keeps pip from holding whole wheels in a cache it also has to
+# copy; on a 512 MB box that alone is the difference between finishing and
+# being OOM-killed.
+./.venv/bin/pip install -q --no-cache-dir -r requirements.txt
 
 echo "==> Registering the systemd service"
 UV_BIN_DIR="$HOME/.local/bin"
+# firewalld ships enabled on Oracle Linux and blocks the UI port; opening it
+# here still leaves the cloud-side security list to the operator.
+if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+    sudo firewall-cmd --permanent --add-port=7860/tcp >/dev/null
+    sudo firewall-cmd --reload >/dev/null
+fi
 sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" >/dev/null <<UNIT
 [Unit]
 Description=Options Alpha autonomous options trading desk
@@ -93,7 +134,8 @@ Provisioned. Two things left, both yours:
   Then confirm the broker path end to end:
        cd ${APP_DIR} && ./.venv/bin/python scripts/verify_mcp.py
 
-  Open the firewall for 7860 in your cloud console, then browse to
-  http://<your-vm-ip>:7860 and sign in.
+  The host firewall is already open for 7860. You still need an ingress rule
+  for TCP 7860 on the subnet's security list in your cloud console, then
+  browse to http://<your-vm-ip>:7860 and sign in.
 
 DONE
