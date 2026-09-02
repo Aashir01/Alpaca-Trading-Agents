@@ -73,6 +73,73 @@ def _build_chain_map(proposal: OptionsStrategyProposal, market_quotes: Optional[
     return chain_map
 
 
+def _existing_exposure(proposal) -> Optional[str]:
+    """Describe exposure that already exists for this structure, or None.
+
+    Nothing upstream asked "do I already hold this?". Loop mode therefore
+    resubmitted the same spread on every iteration, and because the limit sat
+    away from the market none of them filled -- 21 identical iron condors
+    accumulated as working orders on one underlying overnight. Had the market
+    come to that price they would have filled together, at 21x the size the
+    risk gate sized for.
+
+    The gate bounds one position; it has no idea how many times it has been
+    asked the same question. So the check belongs here, in the submission
+    path, where it also covers manual runs and any future caller rather than
+    just the loop.
+
+    Matching is by underlying and expiry, which is the unit the strategist
+    opens and the exit manager closes. A different expiry on the same name is
+    a genuinely different position and is allowed.
+    """
+    from tradingagents.execution.position_manager import parse_occ
+
+    expiries = set()
+    for leg in proposal.legs:
+        parsed = parse_occ(getattr(leg, "symbol", ""))
+        if parsed:
+            expiries.add(parsed["expiry"])
+    if not expiries:
+        return None
+
+    try:
+        client = get_alpaca_trading_client()
+    except Exception:
+        # Cannot verify. Refusing here would block every order whenever the
+        # broker is briefly unreachable; the risk gate and the safety guard
+        # still stand between this and a bad trade.
+        return None
+
+    try:
+        for position in client.get_all_positions():
+            parsed = parse_occ(getattr(position, "symbol", ""))
+            if parsed and parsed["root"] == proposal.symbol.upper() and parsed["expiry"] in expiries:
+                return "an open position in %s %s already exists" % (
+                    proposal.symbol, parsed["expiry"].isoformat()
+                )
+    except Exception:
+        pass
+
+    try:
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        open_orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200))
+        for order in open_orders:
+            symbols = [getattr(order, "symbol", "") or ""]
+            symbols += [getattr(leg, "symbol", "") or "" for leg in (getattr(order, "legs", None) or [])]
+            for symbol in symbols:
+                parsed = parse_occ(symbol)
+                if parsed and parsed["root"] == proposal.symbol.upper() and parsed["expiry"] in expiries:
+                    return "an unfilled order for %s %s is already working" % (
+                        proposal.symbol, parsed["expiry"].isoformat()
+                    )
+    except Exception:
+        pass
+
+    return None
+
+
 def submit_options_plan(
     plan: dict,
     *,
@@ -109,6 +176,19 @@ def submit_options_plan(
     matches, reason = reconcile_direction(proposal, final_action)
     if not matches:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": reason}
+
+    # Entries are idempotent per underlying and expiry: asking twice must not
+    # open twice.
+    duplicate = _existing_exposure(proposal)
+    if duplicate:
+        print("[options_executor] skipping duplicate entry: %s" % duplicate)
+        return {
+            "submitted": False,
+            "order_id": None,
+            "gate_result": None,
+            "duplicate": True,
+            "error": "Duplicate entry skipped: %s." % duplicate,
+        }
 
     account = _build_account_snapshot()
     if market_quotes is None:
@@ -225,6 +305,8 @@ def submit_options_plan(
     if alpaca_mcp_enabled():
         try:
             order_id = _submit_via_mcp(proposal, qty, limit_price, single_leg)
+            _record_in_ledger(proposal, gate_result, order_id, limit_price, qty,
+                              "alpaca-mcp-server")
             return {
                 "submitted": True,
                 "order_id": order_id,
@@ -239,6 +321,11 @@ def submit_options_plan(
 
     try:
         submitted_order = client.submit_order(order_request)
+        _record_in_ledger(
+            proposal, gate_result,
+            str(submitted_order.id) if submitted_order else None,
+            limit_price, qty, "alpaca-py",
+        )
         return {
             "submitted": True,
             "order_id": str(submitted_order.id) if submitted_order else None,
@@ -250,6 +337,32 @@ def submit_options_plan(
         }
     except Exception as exc:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": f"Broker submission error: {exc}"}
+
+
+def _record_in_ledger(proposal, gate_result, order_id, limit_price, qty, transport):
+    """Persist the submission so the trade can be tied back to its reasoning.
+
+    Wrapped so a ledger problem can never fail a submitted order: by the time
+    this runs the order is already at the broker, and raising here would report
+    a live order as failed.
+    """
+    try:
+        from tradingagents.ledger import record_entry
+
+        record_entry(
+            symbol=proposal.symbol,
+            order_id=order_id,
+            asset_class="option",
+            strategy=getattr(proposal.strategy, "value", str(proposal.strategy)),
+            legs=[leg.model_dump(mode="json") for leg in proposal.legs],
+            limit_price=limit_price,
+            quantity=qty,
+            signal=proposal.direction,
+            gate=gate_result.model_dump(mode="json") if gate_result else {},
+            extra={"transport": transport, "model_estimate": proposal.expected_credit_debit},
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("[options_executor] ledger write failed: %s" % exc)
 
 
 def _submit_via_mcp(proposal, qty: int, limit_price: float, single_leg: bool) -> Optional[str]:

@@ -13,6 +13,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     GetAssetsRequest,
     GetOrdersRequest,
+    GetPortfolioHistoryRequest,
     MarketOrderRequest,
     ClosePositionRequest,
     StopLossRequest,
@@ -698,6 +699,50 @@ class AlpacaUtils:
                 "daily_change_dollars": 0,
                 "daily_change_percent": 0
             } 
+
+    # Alpaca's own period/timeframe vocabulary, keyed by the range the UI
+    # offers. The timeframe is chosen so each range comes back with a readable
+    # number of points rather than either four dots or ten thousand.
+    PORTFOLIO_HISTORY_PERIODS = {
+        "1D": ("1D", "5Min"),
+        "1W": ("1W", "1H"),
+        "1M": ("1M", "1D"),
+        "3M": ("3M", "1D"),
+        "1Y": ("1A", "1D"),
+    }
+
+    @staticmethod
+    def get_portfolio_history(period: str = "1M") -> dict:
+        """Account equity over time, for the dashboard's equity curve.
+
+        Returns ``{"points": [(datetime, equity), ...], "base_value": float,
+        "error": str | None}``. Alpaca back-fills zeros for the days before an
+        account was funded; those are dropped rather than drawn, because a line
+        that starts at $0 and jumps to the funded balance reads as a loss of
+        the entire account followed by a recovery.
+        """
+        alpaca_period, timeframe = AlpacaUtils.PORTFOLIO_HISTORY_PERIODS.get(
+            str(period).upper(), AlpacaUtils.PORTFOLIO_HISTORY_PERIODS["1M"]
+        )
+        try:
+            client = get_alpaca_trading_client()
+            history = client.get_portfolio_history(
+                GetPortfolioHistoryRequest(period=alpaca_period, timeframe=timeframe)
+            )
+            timestamps = list(history.timestamp or [])
+            equities = list(history.equity or [])
+
+            points = []
+            for stamp, equity in zip(timestamps, equities):
+                if equity is None or float(equity) <= 0:
+                    continue
+                points.append((datetime.fromtimestamp(int(stamp)), float(equity)))
+
+            base = float(history.base_value or 0) or (points[0][1] if points else 0.0)
+            return {"points": points, "base_value": base, "error": None}
+        except Exception as e:
+            print(f"Error fetching portfolio history: {e}")
+            return {"points": [], "base_value": 0.0, "error": str(e)}
 
     @staticmethod
     def get_current_position_state(symbol: str, strict: bool = False) -> str:

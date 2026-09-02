@@ -1,10 +1,19 @@
-"""
-webui/components/config_panel.py - Configuration panel for the web UI.
+"""Run configuration for the Analysis page.
+
+Split into three panels rather than one tall accordion, because the three
+groups are used on completely different cadences: **Run Setup** is touched on
+every run and sits at the top with the start button in its header; **Execution**
+and **Models** are set once and revisited rarely, so they live below the live
+output instead of pushing it off screen.
+
+Every component id here is targeted by ``control_callbacks`` and
+``api_config_callbacks``; only the grouping and the framing changed.
 """
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from webui.components.app_shell import panel
 from tradingagents.openai_model_registry import (
     PARAMETER_HELP,
     get_default_model_params,
@@ -20,22 +29,6 @@ ANALYSTS = [
     ("analyst-fundamentals", "Fundamentals", "fa-building-columns"),
     ("analyst-macro", "Macro", "fa-globe"),
 ]
-
-
-def _accordion_title(icon, title, meta):
-    return html.Div(
-        [
-            html.I(className=f"fa-solid {icon} config-accordion-icon"),
-            html.Div(
-                [
-                    html.Span(title, className="config-accordion-title"),
-                    html.Small(meta, className="config-accordion-meta"),
-                ],
-                className="config-accordion-copy",
-            ),
-        ],
-        className="config-accordion-heading",
-    )
 
 
 def _field(label, control, icon=None, class_name=""):
@@ -312,6 +305,12 @@ def _run_button():
 
 
 def _core_setup():
+    """Symbols, analysts, and the two run-shape choices.
+
+    Laid out as three stacked bands rather than a single column of fields: the
+    symbol picker wants the full width, the analyst tiles read as one row, and
+    the remaining choices are short enough to sit side by side.
+    """
     return html.Div(
         [
             _field(
@@ -349,9 +348,14 @@ def _core_setup():
                 ),
                 "tag",
             ),
-            html.Div(
-                [_analyst_checkbox(component_id, label, icon) for component_id, label, icon in ANALYSTS],
-                className="analyst-grid",
+            _field(
+                "Analyst team",
+                html.Div(
+                    [_analyst_checkbox(component_id, label, icon)
+                     for component_id, label, icon in ANALYSTS],
+                    className="analyst-grid",
+                ),
+                "users",
             ),
             html.Div(
                 [
@@ -385,24 +389,28 @@ def _core_setup():
                         ),
                         "layer-group",
                     ),
-                    html.Div(id="research-depth-info", className="config-status-slot"),
+                    _field(
+                        "Direction",
+                        html.Div(
+                            dbc.Switch(
+                                id="allow-shorts",
+                                label="Allow shorts",
+                                value=False,
+                                className="config-switch",
+                            ),
+                            className="config-toggle-tile",
+                        ),
+                        "arrows-up-down",
+                    ),
                 ],
-                className="config-two-column",
+                className="config-three-column",
             ),
             html.Div(
                 [
-                    html.Div(
-                        dbc.Switch(
-                            id="allow-shorts",
-                            label="Allow shorts",
-                            value=False,
-                            className="config-switch",
-                        ),
-                        className="config-toggle-tile",
-                    ),
+                    html.Div(id="research-depth-info", className="config-status-slot"),
                     html.Div(id="trading-mode-info", className="config-status-slot"),
                 ],
-                className="config-two-column",
+                className="config-note-row split",
             ),
         ],
         className="config-section-body",
@@ -410,21 +418,32 @@ def _core_setup():
 
 
 def _schedule_and_trading():
+    """Two groups with their own subheads: when it runs, and what it sends.
+
+    They used to be one undifferentiated stack of two-column rows, which read
+    as a settings dump. Naming the groups is what makes the panel scannable --
+    scheduling and order flow are separate decisions with separate risk.
+    """
     return html.Div(
         [
+            html.Div("Schedule", className="subhead first"),
             html.Div(
                 [
-                    html.Div(
-                        dbc.Switch(
-                            id="loop-enabled",
-                            label="Loop mode",
-                            value=False,
-                            className="config-switch",
+                    _field(
+                        "Loop mode",
+                        html.Div(
+                            dbc.Switch(
+                                id="loop-enabled",
+                                label="Repeat on an interval",
+                                value=False,
+                                className="config-switch",
+                            ),
+                            className="config-toggle-tile",
                         ),
-                        className="config-toggle-tile",
+                        "repeat",
                     ),
                     _field(
-                        "Loop interval",
+                        "Loop interval (min)",
                         dbc.Input(
                             id="loop-interval",
                             type="number",
@@ -436,22 +455,21 @@ def _schedule_and_trading():
                         ),
                         "clock",
                     ),
-                ],
-                className="config-two-column",
-            ),
-            html.Div(
-                [
-                    html.Div(
-                        dbc.Switch(
-                            id="market-hour-enabled",
-                            label="Run at market hour",
-                            value=False,
-                            className="config-switch",
+                    _field(
+                        "Market hours",
+                        html.Div(
+                            dbc.Switch(
+                                id="market-hour-enabled",
+                                label="Run at market hour",
+                                value=False,
+                                className="config-switch",
+                            ),
+                            className="config-toggle-tile",
                         ),
-                        className="config-toggle-tile",
+                        "bell",
                     ),
                     _field(
-                        "Trading hours",
+                        "Hours of the day",
                         dbc.Input(
                             id="market-hours-input",
                             type="text",
@@ -462,35 +480,44 @@ def _schedule_and_trading():
                         "calendar-days",
                     ),
                 ],
-                className="config-two-column",
+                className="config-four-column",
             ),
-            html.Div(id="market-hours-validation", className="config-validation-slot"),
-            html.Div(id="scheduling-mode-info", className="config-status-slot"),
-            _field(
-                "Who approves the trade",
-                dbc.RadioItems(
-                    id="execution-mode",
-                    options=[
-                        {"label": "Human in the loop", "value": "approval"},
-                        {"label": "Autonomous", "value": "autonomous"},
-                    ],
-                    value=_configured("execution_mode", "approval"),
-                    inline=True,
-                    className="segmented-radio",
-                ),
-                "user-shield",
-            ),
-            html.Div(id="execution-mode-info", className="config-status-slot"),
             html.Div(
                 [
-                    html.Div(
-                        dbc.Switch(
-                            id="trade-after-analyze",
-                            label="Place order after analysis",
-                            value=False,
-                            className="config-switch",
+                    html.Div(id="market-hours-validation", className="config-validation-slot"),
+                    html.Div(id="scheduling-mode-info", className="config-status-slot"),
+                ],
+                className="config-note-row",
+            ),
+            html.Div("Order flow", className="subhead"),
+            html.Div(
+                [
+                    _field(
+                        "Who approves the trade",
+                        dbc.RadioItems(
+                            id="execution-mode",
+                            options=[
+                                {"label": "Human in the loop", "value": "approval"},
+                                {"label": "Autonomous", "value": "autonomous"},
+                            ],
+                            value=_configured("execution_mode", "approval"),
+                            inline=True,
+                            className="segmented-radio",
                         ),
-                        className="config-toggle-tile",
+                        "user-shield",
+                    ),
+                    _field(
+                        "After analysis",
+                        html.Div(
+                            dbc.Switch(
+                                id="trade-after-analyze",
+                                label="Place the order",
+                                value=False,
+                                className="config-switch",
+                            ),
+                            className="config-toggle-tile",
+                        ),
+                        "paper-plane",
                     ),
                     _field(
                         "Order amount",
@@ -512,9 +539,15 @@ def _schedule_and_trading():
                         "sack-dollar",
                     ),
                 ],
-                className="config-two-column",
+                className="config-three-column",
             ),
-            html.Div(id="trade-after-analyze-info", className="config-status-slot"),
+            html.Div(
+                [
+                    html.Div(id="execution-mode-info", className="config-status-slot"),
+                    html.Div(id="trade-after-analyze-info", className="config-status-slot"),
+                ],
+                className="config-note-row split",
+            ),
         ],
         className="config-section-body",
     )
@@ -531,8 +564,10 @@ def _configured(key, fallback):
 
 
 def _model_setup():
+    """Provider settings on one row, then the two model roles side by side."""
     return html.Div(
         [
+            html.Div("Provider", className="subhead first"),
             html.Div(
                 [
                     _field(
@@ -561,10 +596,34 @@ def _model_setup():
                         ),
                         id="backend-url-group",
                     ),
+                    _field(
+                        "Output language",
+                        dbc.Input(
+                            id="output-language",
+                            type="text",
+                            value="English",
+                            className="config-input",
+                        ),
+                        "language",
+                    ),
+                    _field(
+                        "Checkpoints",
+                        html.Div(
+                            dbc.Switch(
+                                id="checkpoint-enabled",
+                                label="Resume from checkpoint",
+                                value=False,
+                                className="config-switch",
+                            ),
+                            className="config-toggle-tile",
+                        ),
+                        "floppy-disk",
+                    ),
                 ],
-                className="config-two-column",
+                className="config-four-column",
             ),
-            html.Div(id="llm-provider-info", className="config-status-slot"),
+            # Provider-specific knobs; each group is unhidden by its own
+            # callback when that provider is selected.
             html.Div(
                 [
                     html.Div(
@@ -607,30 +666,8 @@ def _model_setup():
                 ],
                 className="config-two-column provider-options-grid",
             ),
-            html.Div(
-                [
-                    _field(
-                        "Output language",
-                        dbc.Input(
-                            id="output-language",
-                            type="text",
-                            value="English",
-                            className="config-input",
-                        ),
-                        "language",
-                    ),
-                    html.Div(
-                        dbc.Switch(
-                            id="checkpoint-enabled",
-                            label="Enable checkpoint resume",
-                            value=False,
-                            className="config-switch",
-                        ),
-                        className="config-toggle-tile",
-                    ),
-                ],
-                className="config-two-column",
-            ),
+            html.Div(id="llm-provider-info", className="config-status-slot"),
+            html.Div("Model roles", className="subhead"),
             html.Div(
                 [
                     _model_panel("quick", "Quick thinker", "bolt", "gpt-5.4-nano"),
@@ -643,59 +680,61 @@ def _model_setup():
     )
 
 
-def create_config_panel():
-    """Create the configuration panel for the web UI."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.Div(
-                    [
-                        html.Div(
-                            [
-                                html.H4("Analysis Configuration", className="config-title"),
-                                html.Div("Auditable multi-agent research", className="config-subtitle"),
-                            ]
-                        ),
-                        html.Div(
-                            [
-                                html.I(className="fa-solid fa-wand-magic-sparkles me-2"),
-                                "Live config",
-                            ],
-                            className="config-badge",
-                        ),
-                    ],
-                    className="config-header",
-                ),
-                dbc.Accordion(
-                    [
-                        dbc.AccordionItem(
-                            _core_setup(),
-                            title=_accordion_title("fa-sliders", "Setup", "Symbols, analysts, depth"),
-                            item_id="setup",
-                        ),
-                        dbc.AccordionItem(
-                            _schedule_and_trading(),
-                            title=_accordion_title("fa-calendar-check", "Execution", "Schedule and order controls"),
-                            item_id="automation",
-                        ),
-                        dbc.AccordionItem(
-                            _model_setup(),
-                            title=_accordion_title("fa-microchip", "LLM Models", "Provider, model choice, checkpoints"),
-                            item_id="models",
-                        ),
-                    ],
-                    active_item=["setup", "models"],
-                    always_open=True,
-                    className="config-accordion",
-                ),
-                html.Div(
-                    [
-                        html.Div(id="control-button-container", children=[_run_button()]),
-                        html.Div(id="result-text", className="result-status mt-3"),
-                    ],
-                    className="config-action-bar",
-                ),
-            ]
+def create_run_setup_panel():
+    """The controls touched on every run, with the start button in the header.
+
+    The button used to float in a sticky bar that overlapped whatever section
+    was scrolled behind it. Anchoring it to the panel head keeps it reachable
+    without covering anything.
+    """
+    return panel(
+        "Run Setup",
+        [
+            _core_setup(),
+            html.Div(id="result-text", className="result-status"),
+        ],
+        icon="fa-sliders",
+        actions=html.Div(
+            html.Div(id="control-button-container", children=[_run_button()]),
+            className="run-action",
         ),
-        className="mb-4 analysis-config-card",
+        panel_id="run-setup-panel",
     )
+
+
+def create_execution_panel():
+    """Scheduling and order controls: set once, revisited rarely."""
+    return panel(
+        "Execution & Schedule",
+        [
+            html.Div(
+                "When the desk runs, who approves the trade, and what it is "
+                "allowed to send to the broker.",
+                className="panel-blurb",
+            ),
+            _schedule_and_trading(),
+        ],
+        icon="fa-calendar-check",
+    )
+
+
+def create_models_panel():
+    """Provider, endpoint, and the two model roles."""
+    return panel(
+        "Models",
+        [
+            html.Div(
+                "The provider and the two model roles the graph runs on. "
+                "Quick thinker handles the analysts; deep thinker handles the "
+                "debates and the final call.",
+                className="panel-blurb",
+            ),
+            _model_setup(),
+        ],
+        icon="fa-microchip",
+    )
+
+
+def create_config_panel():
+    """All three configuration panels, in the order the page shows them."""
+    return [create_run_setup_panel(), create_execution_panel(), create_models_panel()]

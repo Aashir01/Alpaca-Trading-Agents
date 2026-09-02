@@ -97,31 +97,46 @@ AGENT_ROLES = {name: role for name, _, role, _ in ALL_AGENTS}
 
 
 def _agent_card(name, icon, role, prompts):
+    """One row in the roster rail.
+
+    This was a card in a two-across grid, which spent half the page on
+    descriptions and left the prompt editor -- the thing the page exists for --
+    squeezed into the other half. As a list row the whole roster fits in a
+    narrow rail beside a full-width editor, which is the shape this page
+    actually is: pick one of fourteen, then edit it.
+
+    The element keeps its ``agent-card`` id and class so the selection
+    callback's className round-trip is unchanged.
+    """
     count = len(prompts)
     return html.Button(
         [
-            html.Div(
+            html.Span(html.I(className="fa-solid " + icon), className="agent-row-icon"),
+            html.Span(
                 [
-                    html.Span(html.I(className="fa-solid " + icon), className="agent-card-icon"),
-                    html.Span(className="agent-dot", id={"type": "agent-dot", "agent": name}),
+                    html.Span(name, className="agent-row-name"),
+                    html.Span(role, className="agent-row-role", title=role),
                 ],
-                className="agent-card-top",
+                className="agent-row-text",
             ),
-            html.Div(name, className="agent-card-name"),
-            html.Div(role, className="agent-card-role"),
-            html.Div(
+            html.Span(
                 [
                     html.Span(
-                        str(count) + (" prompts" if count != 1 else " prompt"),
-                        className="agent-card-meta",
+                        str(count),
+                        className="agent-row-count",
+                        title=f"{count} prompt template{'s' if count != 1 else ''}",
                     ),
+                    html.Span(className="agent-dot", id={"type": "agent-dot", "agent": name}),
+                    # The word form of the state is kept for screen readers and
+                    # for the callback that writes it; the dot carries it
+                    # visually in a rail this narrow.
                     html.Span(
                         "idle",
                         className="agent-card-state",
                         id={"type": "agent-state", "agent": name},
                     ),
                 ],
-                className="agent-card-foot",
+                className="agent-row-meta",
             ),
         ],
         id={"type": "agent-card", "agent": name},
@@ -136,18 +151,13 @@ def _team_block(title, icon, blurb, agents):
             html.Div(
                 [
                     html.I(className="fa-solid " + icon + " agent-team-icon"),
-                    html.Div(
-                        [
-                            html.H6(title, className="agent-team-title"),
-                            html.Small(blurb, className="agent-team-blurb"),
-                        ],
-                        className="agent-team-text",
-                    ),
+                    html.Span(title, className="agent-team-title"),
                     html.Span(str(len(agents)), className="agent-team-count"),
                 ],
                 className="agent-team-head",
+                title=blurb,
             ),
-            html.Div([_agent_card(*agent) for agent in agents], className="agent-grid"),
+            html.Div([_agent_card(*agent) for agent in agents], className="agent-list"),
         ],
         className="agent-team",
     )
@@ -158,28 +168,36 @@ def _editor():
         [
             html.Div(
                 [
-                    html.Div("No agent selected", id="agent-editor-name",
-                             className="agent-editor-name"),
                     html.Div(
-                        "Pick an agent on the left to load the prompt it runs on.",
-                        id="agent-editor-role",
-                        className="agent-editor-role",
+                        [
+                            html.Div("No agent selected", id="agent-editor-name",
+                                     className="agent-editor-name"),
+                            html.Div(
+                                "Pick an agent on the left to load the prompt it runs on.",
+                                id="agent-editor-role",
+                                className="agent-editor-role",
+                            ),
+                        ],
+                        className="agent-editor-head",
+                    ),
+                    html.Div(
+                        dbc.Select(
+                            id="agent-prompt-select",
+                            options=[],
+                            value=None,
+                            className="config-select agent-prompt-select",
+                        ),
+                        className="agent-editor-picker",
                     ),
                 ],
-                className="agent-editor-head",
-            ),
-            dbc.Select(
-                id="agent-prompt-select",
-                options=[],
-                value=None,
-                className="config-select agent-prompt-select",
+                className="agent-editor-bar",
             ),
             dcc.Textarea(
                 id="agent-prompt-text",
                 className="agent-prompt-text",
                 value="",
                 spellCheck=False,
-                placeholder="The selected prompt loads here.",
+                placeholder="Select an agent, then a template, to load the prompt it runs on.",
             ),
             html.Div(
                 [
@@ -201,7 +219,7 @@ def _editor():
 
 
 def create_agents_page():
-    """Pipeline roster on the left, prompt editor on the right."""
+    """Master-detail: the roster rail on the left, the prompt editor beside it."""
     return [
         page_header(
             "Agents",
@@ -210,27 +228,35 @@ def create_agents_page():
         html.Div(
             [
                 html.Div(
-                    [
-                        panel(
-                            "Pipeline",
-                            html.Div(
-                                [_team_block(*team) for team in AGENT_TEAMS],
-                                className="agent-teams",
-                            ),
-                            icon="fa-diagram-project",
-                            actions=html.Span(
-                                "Click an agent to read or edit its prompt",
-                                className="agent-hint",
-                            ),
-                        )
-                    ],
-                    className="split-col stack",
+                    panel(
+                        "Pipeline",
+                        html.Div(
+                            [_team_block(*team) for team in AGENT_TEAMS],
+                            className="agent-teams",
+                        ),
+                        icon="fa-diagram-project",
+                        actions=html.Span("14 agents", className="agent-hint"),
+                    ),
+                    className="agent-rail",
                 ),
-                html.Div([panel("Prompt", _editor(), icon="fa-pen-to-square")],
-                         className="split-col stack"),
+                html.Div(
+                    panel(
+                        "Prompt Editor",
+                        _editor(),
+                        icon="fa-pen-to-square",
+                        actions=html.Span(
+                            "Saving retunes the next run",
+                            className="agent-hint",
+                        ),
+                    ),
+                    className="agent-detail",
+                ),
             ],
-            className="split-row",
+            className="agent-workspace",
         ),
-        dcc.Store(id="agent-selected", data=None),
+        # Seeded with the first agent so the editor opens on a real prompt
+        # rather than an empty pane; the selection callback falls back to this
+        # value whenever no card was the trigger.
+        dcc.Store(id="agent-selected", data=ALL_AGENTS[0][0]),
         dcc.Interval(id="agents-interval", interval=2000, n_intervals=0),
     ]

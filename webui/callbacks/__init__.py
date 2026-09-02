@@ -17,6 +17,7 @@ from .navigation_callbacks import register_navigation_callbacks
 from .dashboard_callbacks import register_dashboard_callbacks
 from .agent_callbacks import register_agent_callbacks
 from .approval_callbacks import register_approval_callbacks
+from .ledger_callbacks import register_ledger_callbacks
 
 def register_all_callbacks(app):
     """Register all callback functions with the Dash app"""
@@ -34,3 +35,4 @@ def register_all_callbacks(app):
     register_cost_callbacks(app)
     register_navigation_callbacks(app)
     register_dashboard_callbacks(app)
+    register_ledger_callbacks(app)

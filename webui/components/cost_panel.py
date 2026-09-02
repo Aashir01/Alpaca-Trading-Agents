@@ -11,55 +11,48 @@ as unpriced tokens rather than guessed.
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from webui.components.app_shell import panel
+from webui.utils.charts import STATIC_CONFIG, empty_figure
+
 
 def create_cost_panel():
-    """Create the LLM cost panel card for the web UI."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H4("LLM Cost Monitor", className="mb-1"),
-                html.Div(
-                    "Estimated spend from recorded token usage — attributed per "
-                    "day, symbol, and model, against realized returns. Prices are "
-                    "estimates (override via llm_pricing_per_million); cache "
-                    "discounts are not tracked, so this is an upper bound.",
-                    className="text-muted small mb-3",
-                ),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            dbc.Button(
-                                [html.I(className="fas fa-sync me-2"), "Refresh"],
-                                id="cost-refresh-btn",
-                                color="primary",
-                                size="sm",
-                            ),
-                            width="auto",
-                        ),
-                    ],
-                    className="g-2 mb-3",
-                ),
-                dcc.Loading(
-                    id="cost-loading",
-                    type="default",
-                    children=html.Div(
-                        [
-                            html.Div(id="cost-summary-cards", className="mb-3"),
-                            html.Div(
-                                dcc.Graph(
-                                    id="cost-daily-graph",
-                                    config={"displayModeBar": False, "responsive": True},
-                                    style={"height": "260px", "width": "100%"},
-                                ),
-                                id="cost-graph-container",
-                                style={"display": "none"},
-                            ),
-                            html.Div(id="cost-symbol-table", className="mb-2"),
-                            html.Div(id="cost-model-table"),
-                        ]
-                    ),
-                ),
-            ]
-        ),
-        className="mb-4",
+    """Create the LLM cost panel for the web UI."""
+    actions = dbc.Button(
+        [html.I(className="fas fa-rotate me-2"), "Refresh"],
+        id="cost-refresh-btn",
+        color="primary",
+        size="sm",
     )
+
+    body = [
+        html.Div(
+            "Estimated spend from recorded token usage — attributed per day, symbol, "
+            "and model, against realized returns. Prices are estimates (override via "
+            "llm_pricing_per_million); cache discounts are not tracked, so this is an "
+            "upper bound.",
+            className="panel-blurb",
+        ),
+        dcc.Loading(
+            id="cost-loading",
+            type="default",
+            children=html.Div(
+                [
+                    html.Div(id="cost-summary-cards", className="mb-3"),
+                    html.Div(
+                        dcc.Graph(
+                            id="cost-daily-graph",
+                            figure=empty_figure("No recorded LLM spend yet"),
+                            config=STATIC_CONFIG,
+                            style={"height": "260px", "width": "100%"},
+                        ),
+                        id="cost-graph-container",
+                        style={"display": "none"},
+                    ),
+                    html.Div(id="cost-symbol-table", className="mb-2"),
+                    html.Div(id="cost-model-table"),
+                ]
+            ),
+        ),
+    ]
+
+    return panel("LLM Cost Monitor", body, icon="fa-coins", actions=actions)

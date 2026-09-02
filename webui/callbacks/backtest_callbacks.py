@@ -8,7 +8,15 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import Input, Output, State, html
 
-from webui.config.constants import COLORS
+from webui.utils.charts import (
+    BG,
+    BORDER,
+    NEG,
+    POS,
+    TEXT_FAINT,
+    apply_chart_theme,
+    empty_figure,
+)
 
 
 def _fmt_pct(value):
@@ -19,89 +27,121 @@ def _fmt_ratio(value):
     return "—" if value is None else f"{value:.2f}"
 
 
-def _metric_color(value, invert=False):
+def _metric_tone(value, invert=False):
+    """Polarity class for a metric, or neutral when it could not be computed."""
     if value is None:
-        return COLORS["pending"]
+        return "neutral"
     good = value < 0 if invert else value > 0
-    return COLORS["completed"] if good else COLORS["error"]
+    return "pos" if good else "neg"
 
 
-def _metric_card(label, text, color):
-    return dbc.Col(
-        dbc.Card(
-            dbc.CardBody(
-                [
-                    html.Div(label, className="text-muted small"),
-                    html.Div(text, style={"color": color, "fontSize": "1.3rem", "fontWeight": 600}),
-                ],
-                className="p-2 text-center",
-            ),
-            style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}"},
-        ),
-        md=2,
-        xs=6,
-        className="mb-2",
+def _metric_card(label, text, tone="neutral"):
+    """One backtest metric, wearing the same KPI tile the rest of the app uses."""
+    value_class = "kpi-value sm"
+    if tone in ("pos", "neg"):
+        value_class += f" text-{tone}"
+    return html.Div(
+        [
+            html.Div(label, className="kpi-label"),
+            html.Div(text, className=value_class),
+        ],
+        className=f"kpi {tone}",
     )
 
 
 def _build_metric_cards(metrics, signals_used):
     sharpe = metrics.get("sharpe_ratio")
-    return dbc.Row(
+    drawdown = metrics.get("max_drawdown")
+    return html.Div(
         [
             _metric_card(
                 "Cumulative Return",
                 _fmt_pct(metrics.get("cumulative_return")),
-                _metric_color(metrics.get("cumulative_return")),
+                _metric_tone(metrics.get("cumulative_return")),
             ),
             _metric_card(
                 "Annualized Return",
                 _fmt_pct(metrics.get("annualized_return")),
-                _metric_color(metrics.get("annualized_return")),
+                _metric_tone(metrics.get("annualized_return")),
             ),
-            _metric_card("Sharpe Ratio", _fmt_ratio(sharpe), _metric_color(sharpe)),
+            _metric_card("Sharpe Ratio", _fmt_ratio(sharpe), _metric_tone(sharpe)),
             _metric_card(
                 "Max Drawdown",
-                "—" if metrics.get("max_drawdown") is None else f"-{metrics['max_drawdown']:.2%}",
-                _metric_color(metrics.get("max_drawdown"), invert=True)
-                if metrics.get("max_drawdown")
-                else COLORS["pending"],
+                "—" if drawdown is None else f"-{drawdown:.2%}",
+                _metric_tone(drawdown, invert=True) if drawdown else "neutral",
             ),
             _metric_card(
                 "Win Rate",
                 "—" if metrics.get("win_rate") is None else f"{metrics['win_rate']:.0%}",
-                COLORS["primary"],
             ),
             _metric_card(
                 "Trades / Signals",
                 f"{metrics.get('num_trades', 0)} / {signals_used}",
-                COLORS["text"],
             ),
         ],
-        className="g-2",
+        className="kpi-grid tight",
     )
 
 
 def _build_equity_figure(equity_curve, symbol):
+    """Backtested equity, drawn the same way the live curve is.
+
+    The line takes the polarity colour of the period's net result and the
+    starting capital is marked, so a replay that lost money cannot be mistaken
+    for one that made money at a glance.
+    """
+    values = [float(v) for v in equity_curve.values]
+    if len(values) < 2:
+        return empty_figure("Not enough data to plot", f"No replayable price history for {symbol}")
+
+    colour = POS if values[-1] >= values[0] else NEG
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=list(equity_curve.index),
-            y=list(equity_curve.values),
+            y=values,
             mode="lines",
             name="Equity",
-            line={"color": COLORS["primary"], "width": 2},
+            line={"color": colour, "width": 2},
             fill="tozeroy",
-            fillcolor="rgba(59, 130, 246, 0.08)",
+            fillcolor=f"rgba({int(colour[1:3], 16)},{int(colour[3:5], 16)},{int(colour[5:7], 16)},0.10)",
+            hovertemplate="%{x|%b %d, %Y}<br><b>$%{y:,.2f}</b><extra></extra>",
         )
     )
+    figure.add_trace(
+        go.Scatter(
+            x=[list(equity_curve.index)[-1]],
+            y=[values[-1]],
+            mode="markers",
+            marker=dict(color=colour, size=8, line=dict(color=BG, width=2)),
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+    figure.add_hline(
+        y=values[0],
+        line=dict(color=BORDER, width=1, dash="dot"),
+        annotation_text=f"start ${values[0]:,.0f}",
+        annotation_position="top left",
+        annotation_font=dict(color=TEXT_FAINT, size=10.5),
+    )
+    low, high = min(values), max(values)
+    pad = max((high - low) * 0.12, high * 0.0015, 1.0)
     figure.update_layout(
-        title=f"Equity Curve — {symbol}",
-        template="plotly_dark",
-        paper_bgcolor=COLORS["card"],
-        plot_bgcolor=COLORS["card"],
-        margin={"l": 40, "r": 20, "t": 40, "b": 30},
-        yaxis={"title": "Portfolio value ($)", "tickformat": ",.0f"},
+        margin={"l": 62, "r": 18, "t": 26, "b": 32},
+        yaxis={"title": "Portfolio value", "tickformat": ",.0f", "tickprefix": "$",
+               "range": [low - pad, high + pad]},
         showlegend=False,
+        height=320,
+    )
+    apply_chart_theme(figure)
+    figure.update_layout(margin={"l": 62, "r": 18, "t": 26, "b": 32})
+    figure.update_xaxes(showspikes=True, spikemode="across", spikesnap="cursor",
+                        spikecolor=BORDER, spikethickness=1, spikedash="solid")
+    figure.add_annotation(
+        text=f"<b>Equity curve — {symbol}</b>",
+        xref="paper", yref="paper", x=0, y=1.10, showarrow=False, xanchor="left",
+        font=dict(color=TEXT_FAINT, size=11.5),
     )
     return figure
 
@@ -113,11 +153,11 @@ def _build_windows_table(windows):
         html.Tr(
             [
                 html.Th("Window"),
-                html.Th("Bars"),
-                html.Th("Return"),
-                html.Th("Sharpe"),
-                html.Th("Max DD"),
-                html.Th("Win Rate"),
+                html.Th("Bars", className="num"),
+                html.Th("Return", className="num"),
+                html.Th("Sharpe", className="num"),
+                html.Th("Max DD", className="num"),
+                html.Th("Win Rate", className="num"),
             ]
         )
     )
@@ -129,25 +169,27 @@ def _build_windows_table(windows):
             html.Tr(
                 [
                     html.Td(f"{window['start_date']} → {window['end_date']}"),
-                    html.Td(window["bars"]),
+                    html.Td(window["bars"], className="num"),
                     html.Td(
                         _fmt_pct(cum),
-                        style={"color": _metric_color(cum)},
+                        className=f"num text-{_metric_tone(cum)}" if cum is not None else "num",
                     ),
-                    html.Td(_fmt_ratio(metrics.get("sharpe_ratio"))),
+                    html.Td(_fmt_ratio(metrics.get("sharpe_ratio")), className="num"),
                     html.Td(
-                        "—" if metrics.get("max_drawdown") is None else f"-{metrics['max_drawdown']:.2%}"
+                        "—" if metrics.get("max_drawdown") is None else f"-{metrics['max_drawdown']:.2%}",
+                        className="num",
                     ),
                     html.Td(
-                        "—" if metrics.get("win_rate") is None else f"{metrics['win_rate']:.0%}"
+                        "—" if metrics.get("win_rate") is None else f"{metrics['win_rate']:.0%}",
+                        className="num",
                     ),
                 ]
             )
         )
     return html.Div(
         [
-            html.H6("Out-of-sample windows", className="mt-2"),
-            dbc.Table([header, html.Tbody(rows)], bordered=False, hover=True, size="sm", striped=True),
+            html.Div("Out-of-sample windows", className="subhead"),
+            html.Table([header, html.Tbody(rows)], className="data-table"),
         ]
     )
 
@@ -176,7 +218,8 @@ def register_backtest_callbacks(app):
     )
     def run_backtest_callback(n_clicks, symbol, start_date, end_date, window_bars, allow_shorts, slippage_model):
         hidden = {"display": "none"}
-        empty = go.Figure()
+        empty = empty_figure("No backtest run yet",
+                             "Enter a symbol and press Run Backtest")
 
         symbol = (symbol or "").strip().upper()
         if not symbol:

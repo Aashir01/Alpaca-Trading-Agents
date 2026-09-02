@@ -12,7 +12,7 @@ Built by [@Aashir01](https://github.com/Aashir01) for the
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Alpaca](https://img.shields.io/badge/Alpaca-paper%20trading-FFD100)](https://alpaca.markets/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-1C3C3C)](https://langchain-ai.github.io/langgraph/)
-[![Tests](https://img.shields.io/badge/tests-355%20passing-22D07F)](#testing)
+[![Tests](https://img.shields.io/badge/tests-428%20passing-22D07F)](#testing)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 [Quick Start](#quick-start) · [How It Works](#how-it-works) · [The Risk Gate](#the-risk-gate) ·
@@ -198,6 +198,77 @@ paper/live badge visible everywhere.
 - **No hard CDN dependency for layout.** The shell, grid, tables, and tab strip are styled by
   the app's own stylesheet, so the layout survives a slow or blocked CDN.
 - **Responsive.** Below 860px the sidebar collapses to an icon rail and panels reflow.
+
+---
+
+## Positions are managed, not just opened
+
+A defined-risk structure bounds what a position *can* lose. It does nothing about when to
+stop losing it. The risk gate sizes a new trade and the safety breakers refuse new orders,
+but neither touches capital already committed — so a spread used to ride to expiry whichever
+way it went.
+
+`tradingagents/execution/position_manager.py` closes that loop. It groups raw option legs
+into structures by underlying and expiry — a four-leg iron condor is **one** position, not
+four — and decides from the broker's own cost basis and market value. No model opinion is
+involved in an exit, so a hallucinated estimate cannot hold a loser open or close a winner.
+
+| Exit | Credit structures | Debit structures |
+|------|-------------------|------------------|
+| **Stop** | loss reaches 1.5× the credit received | loss reaches 50% of the premium paid |
+| **Profit** | 35% of the premium captured | 35% of the premium captured |
+| **Time** | 21 days to expiry | 21 days to expiry |
+
+Credit and debit need different stops: a debit spread cannot lose more than it cost, so a
+"1.5× the premium" stop could never fire on one.
+
+Closes go out as a **single MLEG order**. Closing a condor leg by leg can partially fill and
+leave a naked short — precisely the exposure the defined-risk structure existed to avoid.
+
+The loss breakers **flatten** rather than only veto: refusing to open is no protection for
+money already at risk, so a tripped daily-loss or drawdown breaker closes everything and
+engages the kill switch. The kill switch itself deliberately does not flatten — it means
+"stop trading", not "liquidate a book someone may have halted precisely to leave alone".
+
+Exits run on a systemd timer, not inside the agent graph. **A stop that only fires when an
+analysis happens to be running is not a stop.** The runner asks Alpaca whether the market is
+open rather than hard-coding hours, so it is immune to daylight saving and does not pile up
+after-hours rejections.
+
+**Entries are idempotent.** Before submitting, the executor checks for an open position or a
+working order on the same underlying and expiry and skips if one exists. Without it, loop
+mode resubmitted the same spread every iteration; because the limit sat away from the market
+none filled, and 21 identical condors accumulated as working orders on one underlying
+overnight — which would have filled together at 21× the size the gate approved. The gate
+bounds a single position; it cannot know how many times it has been asked the same question.
+
+---
+
+## Everything is recorded
+
+The run logs hold the reasoning — every prompt, tool call, agent output, and the final
+signal. What no store held was what actually reached the broker: order ids, fills, and the
+reason a position closed lived only inside Alpaca, unlinked to the run that caused them.
+
+`tradingagents/ledger.py` is an append-only JSONL of **entries** (carrying the risk gate's
+recomputed max-loss and net premium, not the model's estimate) and **exits** (carrying the
+rule that fired, verbatim). Fill status is not known at submission time, so it is not
+guessed: `reconcile()` fetches the terminal state from the broker later and appends it
+rather than rewriting history.
+
+<div align="center">
+<img src="assets/screenshots/trade-ledger.png" alt="Trade Ledger" width="100%">
+<em>Orders joined to the runs that produced them, with exits grouped by the rule that fired</em>
+</div>
+
+```bash
+python scripts/export_data.py            # run logs + ledger + IV history -> one archive
+python scripts/export_data.py --summary-only
+python scripts/manage_positions.py --dry-run   # what the exit manager would close, and why
+```
+
+The archive is written `0600` and never auto-redacted: prompts carry whatever the tools
+returned, so treat it as sensitive.
 
 ---
 
@@ -458,7 +529,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-**355 tests, fully offline** — every Alpaca and LLM call is mocked.
+**428 tests, fully offline** — every Alpaca and LLM call is mocked.
 
 Coverage worth knowing about:
 

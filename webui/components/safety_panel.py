@@ -9,63 +9,42 @@ that halts all order flow immediately, regardless of agent decisions.
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from webui.components.app_shell import panel
+
 
 def create_safety_panel():
-    """Create the safety guardrails card for the web UI."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                html.H4("Safety Guardrails", className="mb-1"),
-                                html.Div(
-                                    "Deterministic pre-trade checks, circuit breakers, and a "
-                                    "kill switch — enforced before any order reaches the broker, "
-                                    "independent of agent decisions.",
-                                    className="text-muted small",
-                                ),
-                            ],
-                            md=8,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.ButtonGroup(
-                                    [
-                                        dbc.Button(
-                                            [
-                                                html.I(className="fas fa-hand-paper me-2"),
-                                                "Engage Kill Switch",
-                                            ],
-                                            id="safety-kill-switch-btn",
-                                            color="danger",
-                                            size="sm",
-                                        ),
-                                        dbc.Button(
-                                            "Release",
-                                            id="safety-release-btn",
-                                            color="secondary",
-                                            outline=True,
-                                            size="sm",
-                                        ),
-                                    ],
-                                    className="float-end",
-                                ),
-                            ],
-                            md=4,
-                        ),
-                    ],
-                    className="mb-3 align-items-start",
-                ),
-                html.Div(id="safety-action-status", className="mb-2"),
-                html.Div(id="safety-status-container"),
-                dcc.Interval(
-                    id="safety-refresh-interval",
-                    interval=30_000,  # 30s
-                    n_intervals=0,
-                ),
-            ]
-        ),
-        className="mb-4",
+    """Create the safety guardrails panel for the web UI."""
+    # The kill switch is the one control on this page that stops live order
+    # flow, so it stays in the panel head where it is always reachable rather
+    # than scrolling away with the guard list.
+    actions = html.Div(
+        [
+            dbc.Button(
+                [html.I(className="fas fa-hand me-2"), "Engage Kill Switch"],
+                id="safety-kill-switch-btn",
+                color="danger",
+                size="sm",
+            ),
+            dbc.Button(
+                "Release",
+                id="safety-release-btn",
+                color="secondary",
+                outline=True,
+                size="sm",
+            ),
+        ],
+        className="panel-action-group",
     )
+
+    body = [
+        html.Div(
+            "Deterministic pre-trade checks, circuit breakers, and a kill switch — "
+            "enforced before any order reaches the broker, independent of agent decisions.",
+            className="panel-blurb",
+        ),
+        html.Div(id="safety-action-status", className="panel-notice"),
+        html.Div(id="safety-status-container"),
+        dcc.Interval(id="safety-refresh-interval", interval=30_000, n_intervals=0),
+    ]
+
+    return panel("Safety Guardrails", body, icon="fa-shield-halved", actions=actions)
