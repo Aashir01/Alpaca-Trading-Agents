@@ -17,6 +17,7 @@ NAV_ITEMS = [
     ("reports", "fa-file-lines", "Agent Reports", None),
     ("options", "fa-layer-group", "Options Desk", "nav-badge-options"),
     ("positions", "fa-wallet", "Positions & Orders", None),
+    ("ledger", "fa-book", "Trade Ledger", None),
     ("backtest", "fa-flask", "Backtest", None),
     ("settings", "fa-sliders", "Settings", None),
 ]
@@ -28,6 +29,7 @@ PAGE_META = {
     "reports": ("Agent Reports", "Full audit trail for every agent in the pipeline"),
     "options": ("Options Desk", "Defined-risk options overlay and risk-gate verdicts"),
     "positions": ("Positions & Orders", "Live Alpaca positions, orders, and account detail"),
+    "ledger": ("Trade Ledger", "Every order placed, and what the broker did with it"),
     "backtest": ("Backtest", "Replay strategies over historical data"),
     "settings": ("Settings", "Safety guardrails, API keys, and cost tracking"),
 }
