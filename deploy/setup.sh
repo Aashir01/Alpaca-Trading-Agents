@@ -145,7 +145,7 @@ Environment=WEBUI_PRODUCTION=true
 Environment=PYTHONUNBUFFERED=1
 ${SQLITE_ENV}
 Environment=PATH=${UV_BIN_DIR}:/usr/local/bin:/usr/bin:/bin
-ExecStart=${APP_DIR}/.venv/bin/python run_webui_dash.py --server-name 0.0.0.0 --port 7860
+ExecStart=${APP_DIR}/.venv/bin/python run_webui_dash.py --server-name 0.0.0.0 --port 7860 --strict-port
 Restart=always
 RestartSec=10
 StandardOutput=journal

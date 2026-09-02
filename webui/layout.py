@@ -26,6 +26,7 @@ from webui.components.config_panel import (
 )
 from webui.components.cost_panel import create_cost_panel
 from webui.components.dashboard import create_dashboard_page
+from webui.components.ledger_panel import create_ledger_page
 from webui.components.decision_panel import create_decision_panel
 from webui.components.options_desk import create_options_page
 from webui.components.reports_panel import create_reports_panel
@@ -195,6 +196,7 @@ def create_main_layout():
             page_container("reports", _reports_page()),
             page_container("options", create_options_page()),
             page_container("positions", _positions_page()),
+            page_container("ledger", create_ledger_page()),
             page_container("backtest", _backtest_page()),
             page_container("settings", _settings_page()),
         ],

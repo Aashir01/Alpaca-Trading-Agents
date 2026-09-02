@@ -288,6 +288,8 @@ def manage_open_positions(
 
         result = close_group(group, dry_run=dry_run)
         decision["result"] = result
+        if result.get("submitted"):
+            _record_exit_in_ledger(group, decision, result, config)
         if result.get("submitted") or result.get("dry_run"):
             report["closed"].append(decision)
         else:
@@ -304,6 +306,33 @@ def manage_open_positions(
             pass
 
     return report
+
+
+def _record_exit_in_ledger(group, decision, result, config) -> None:
+    """Persist the close, and the rule that caused it.
+
+    Guarded like the entry side: the closing order is already live by this
+    point, and an exception here would misreport a real exit as a failure.
+    """
+    try:
+        from tradingagents.ledger import record_exit
+
+        record_exit(
+            symbol=group["underlying"],
+            order_id=result.get("order_id"),
+            reason=decision.get("reason", ""),
+            group_key=group["key"],
+            legs=[
+                {"symbol": leg["symbol"], "qty": leg["qty"]} for leg in group["legs"]
+            ],
+            premium=decision.get("premium"),
+            unrealized_pl=decision.get("unrealized_pl"),
+            structure=decision.get("structure", ""),
+            dte=decision.get("dte"),
+            config=config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("[position_manager] ledger write failed: %s" % exc)
 
 
 def _tripped_breaker(config: Dict[str, Any]) -> Optional[str]:

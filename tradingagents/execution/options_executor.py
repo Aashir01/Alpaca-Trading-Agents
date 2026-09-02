@@ -225,6 +225,8 @@ def submit_options_plan(
     if alpaca_mcp_enabled():
         try:
             order_id = _submit_via_mcp(proposal, qty, limit_price, single_leg)
+            _record_in_ledger(proposal, gate_result, order_id, limit_price, qty,
+                              "alpaca-mcp-server")
             return {
                 "submitted": True,
                 "order_id": order_id,
@@ -239,6 +241,11 @@ def submit_options_plan(
 
     try:
         submitted_order = client.submit_order(order_request)
+        _record_in_ledger(
+            proposal, gate_result,
+            str(submitted_order.id) if submitted_order else None,
+            limit_price, qty, "alpaca-py",
+        )
         return {
             "submitted": True,
             "order_id": str(submitted_order.id) if submitted_order else None,
@@ -250,6 +257,32 @@ def submit_options_plan(
         }
     except Exception as exc:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": f"Broker submission error: {exc}"}
+
+
+def _record_in_ledger(proposal, gate_result, order_id, limit_price, qty, transport):
+    """Persist the submission so the trade can be tied back to its reasoning.
+
+    Wrapped so a ledger problem can never fail a submitted order: by the time
+    this runs the order is already at the broker, and raising here would report
+    a live order as failed.
+    """
+    try:
+        from tradingagents.ledger import record_entry
+
+        record_entry(
+            symbol=proposal.symbol,
+            order_id=order_id,
+            asset_class="option",
+            strategy=getattr(proposal.strategy, "value", str(proposal.strategy)),
+            legs=[leg.model_dump(mode="json") for leg in proposal.legs],
+            limit_price=limit_price,
+            quantity=qty,
+            signal=proposal.direction,
+            gate=gate_result.model_dump(mode="json") if gate_result else {},
+            extra={"transport": transport, "model_estimate": proposal.expected_credit_debit},
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("[options_executor] ledger write failed: %s" % exc)
 
 
 def _submit_via_mcp(proposal, qty: int, limit_price: float, single_leg: bool) -> Optional[str]:

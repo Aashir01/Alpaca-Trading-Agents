@@ -44,6 +44,17 @@ def parse_args():
     )
     
     parser.add_argument(
+        "--strict-port",
+        action="store_true",
+        help=(
+            "Fail if --port is taken instead of moving to the next free one. "
+            "Use this for a managed service: the firewall, the cloud security "
+            "list and any proxy are all pinned to one port, so quietly moving "
+            "leaves the app running where nothing can reach it."
+        ),
+    )
+
+    parser.add_argument(
         "--share",
         action="store_true",
         help="Share the app publicly",
@@ -76,14 +87,27 @@ def main():
     """Run the Dash web UI"""
     args = parse_args()
     
-    # Find an available port if the specified one is not available
-    port = find_available_port(args.port)
-    if port is None:
-        print(f"Error: Could not find an available port between {args.port} and {args.port + 100}")
-        return 1
-    
-    if port != args.port:
-        print(f"Port {args.port} is already in use. Using port {port} instead.")
+    # Port hunting is a convenience for interactive use. Under a service
+    # manager it is a trap: a restart that races the old process off the port
+    # silently rehomes the app somewhere the firewall does not allow, and the
+    # unit still reports "active". --strict-port fails instead, so systemd
+    # retries until the port is actually free.
+    if args.strict_port:
+        port = args.port
+        if find_available_port(port, port) is None:
+            print(
+                f"Error: port {port} is in use and --strict-port was given. "
+                "Refusing to start on a different port."
+            )
+            return 1
+    else:
+        port = find_available_port(args.port)
+        if port is None:
+            print(f"Error: Could not find an available port between {args.port} and {args.port + 100}")
+            return 1
+
+        if port != args.port:
+            print(f"Port {args.port} is already in use. Using port {port} instead.")
     
     print(f"Starting TradingAgents Dash Web UI on port {port}...")
     
