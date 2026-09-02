@@ -211,7 +211,10 @@ DEFAULT_CONFIG = {
     # desk place it unattended. Defaults to approval: unattended execution
     # should be something you switch on deliberately, not inherit.
     "execution_mode": os.getenv("EXECUTION_MODE", "approval").strip().lower(),
-    "options_dte_min": _env_num("OPTIONS_DTE_MIN", 7, int),  # Minimum days to expiration considered in the chain
+    # Must stay clear of options_close_dte (21): a spread opened inside the
+    # exit manager's close window is closed by the very next timer tick,
+    # which pays the spread twice for no exposure.
+    "options_dte_min": _env_num("OPTIONS_DTE_MIN", 30, int),  # Minimum days to expiration considered in the chain
     "options_dte_max": _env_num("OPTIONS_DTE_MAX", 45, int),  # Maximum days to expiration considered in the chain
     "options_max_loss_pct": _env_num("OPTIONS_MAX_LOSS_PCT", 2.0, float),  # Max risk-sized loss per position as % of account equity
     # Exit management for open options structures (position_manager.py). The

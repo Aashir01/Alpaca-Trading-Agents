@@ -251,3 +251,41 @@ class BreakerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfigInvariantTests(unittest.TestCase):
+    """The entry window and the exit window must not overlap.
+
+    OPTIONS_DTE_MIN was 7 while OPTIONS_CLOSE_DTE was 21, so the strategist
+    opened spreads at 9 and 10 days to expiry and the exit manager closed them
+    on its next tick -- paying the spread twice for no exposure. Two settings
+    owned by two different modules, each defensible alone.
+    """
+
+    def test_default_entry_window_clears_the_close_window(self):
+        from tradingagents.default_config import DEFAULT_CONFIG
+
+        self.assertGreater(
+            DEFAULT_CONFIG["options_dte_min"],
+            DEFAULT_CONFIG["options_close_dte"],
+            "a spread opened inside the close window is closed by the next tick",
+        )
+
+    def test_a_spread_opened_at_the_minimum_survives_its_first_check(self):
+        from datetime import timedelta
+
+        from tradingagents.default_config import DEFAULT_CONFIG
+
+        opened_at = date(2026, 8, 1)
+        expiry = opened_at + timedelta(days=DEFAULT_CONFIG["options_dte_min"])
+        group = {
+            "key": "T:%s" % expiry,
+            "underlying": "T",
+            "expiry": expiry,
+            "legs": [],
+            "cost_basis": -800.0,
+            "market_value": -800.0,
+            "unrealized_pl": 0.0,
+        }
+        decision = evaluate_group(group, DEFAULT_CONFIG, today=opened_at)
+        self.assertEqual(decision["action"], "hold")

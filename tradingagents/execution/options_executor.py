@@ -73,6 +73,73 @@ def _build_chain_map(proposal: OptionsStrategyProposal, market_quotes: Optional[
     return chain_map
 
 
+def _existing_exposure(proposal) -> Optional[str]:
+    """Describe exposure that already exists for this structure, or None.
+
+    Nothing upstream asked "do I already hold this?". Loop mode therefore
+    resubmitted the same spread on every iteration, and because the limit sat
+    away from the market none of them filled -- 21 identical iron condors
+    accumulated as working orders on one underlying overnight. Had the market
+    come to that price they would have filled together, at 21x the size the
+    risk gate sized for.
+
+    The gate bounds one position; it has no idea how many times it has been
+    asked the same question. So the check belongs here, in the submission
+    path, where it also covers manual runs and any future caller rather than
+    just the loop.
+
+    Matching is by underlying and expiry, which is the unit the strategist
+    opens and the exit manager closes. A different expiry on the same name is
+    a genuinely different position and is allowed.
+    """
+    from tradingagents.execution.position_manager import parse_occ
+
+    expiries = set()
+    for leg in proposal.legs:
+        parsed = parse_occ(getattr(leg, "symbol", ""))
+        if parsed:
+            expiries.add(parsed["expiry"])
+    if not expiries:
+        return None
+
+    try:
+        client = get_alpaca_trading_client()
+    except Exception:
+        # Cannot verify. Refusing here would block every order whenever the
+        # broker is briefly unreachable; the risk gate and the safety guard
+        # still stand between this and a bad trade.
+        return None
+
+    try:
+        for position in client.get_all_positions():
+            parsed = parse_occ(getattr(position, "symbol", ""))
+            if parsed and parsed["root"] == proposal.symbol.upper() and parsed["expiry"] in expiries:
+                return "an open position in %s %s already exists" % (
+                    proposal.symbol, parsed["expiry"].isoformat()
+                )
+    except Exception:
+        pass
+
+    try:
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        open_orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200))
+        for order in open_orders:
+            symbols = [getattr(order, "symbol", "") or ""]
+            symbols += [getattr(leg, "symbol", "") or "" for leg in (getattr(order, "legs", None) or [])]
+            for symbol in symbols:
+                parsed = parse_occ(symbol)
+                if parsed and parsed["root"] == proposal.symbol.upper() and parsed["expiry"] in expiries:
+                    return "an unfilled order for %s %s is already working" % (
+                        proposal.symbol, parsed["expiry"].isoformat()
+                    )
+    except Exception:
+        pass
+
+    return None
+
+
 def submit_options_plan(
     plan: dict,
     *,
@@ -109,6 +176,19 @@ def submit_options_plan(
     matches, reason = reconcile_direction(proposal, final_action)
     if not matches:
         return {"submitted": False, "order_id": None, "gate_result": None, "error": reason}
+
+    # Entries are idempotent per underlying and expiry: asking twice must not
+    # open twice.
+    duplicate = _existing_exposure(proposal)
+    if duplicate:
+        print("[options_executor] skipping duplicate entry: %s" % duplicate)
+        return {
+            "submitted": False,
+            "order_id": None,
+            "gate_result": None,
+            "duplicate": True,
+            "error": "Duplicate entry skipped: %s." % duplicate,
+        }
 
     account = _build_account_snapshot()
     if market_quotes is None:
