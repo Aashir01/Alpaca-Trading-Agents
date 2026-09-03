@@ -15,6 +15,8 @@ Built by [@Aashir01](https://github.com/Aashir01) for the
 [![Tests](https://img.shields.io/badge/tests-428%20passing-22D07F)](#testing)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
+**[📄 One-page technical write-up](SUBMISSION.md)** — AI logic, risk gates, Alpaca infrastructure
+
 [Quick Start](#quick-start) · [How It Works](#how-it-works) · [The Risk Gate](#the-risk-gate) ·
 [MCP Server](#alpaca-mcp-server) · [The App](#the-app) · [Configuration](#configuration) ·
 [Testing](#testing)
