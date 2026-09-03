@@ -12,7 +12,7 @@ Built by [@Aashir01](https://github.com/Aashir01) for the
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Alpaca](https://img.shields.io/badge/Alpaca-paper%20trading-FFD100)](https://alpaca.markets/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-1C3C3C)](https://langchain-ai.github.io/langgraph/)
-[![Tests](https://img.shields.io/badge/tests-428%20passing-22D07F)](#testing)
+[![Tests](https://img.shields.io/badge/tests-433%20passing-22D07F)](#testing)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **[📄 One-page technical write-up](SUBMISSION.md)** — AI logic, risk gates, Alpaca infrastructure
@@ -534,7 +534,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-**428 tests, fully offline** — every Alpaca and LLM call is mocked.
+**433 tests, fully offline** — every Alpaca and LLM call is mocked.
 
 Coverage worth knowing about:
 
