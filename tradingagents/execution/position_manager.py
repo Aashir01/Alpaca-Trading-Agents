@@ -172,6 +172,47 @@ def evaluate_group(
     return decision
 
 
+def close_already_working(group: Dict[str, Any]) -> Optional[str]:
+    """True-ish when an unfilled close is already out for these legs.
+
+    The manager runs every 15 minutes and reads positions, not orders. A close
+    that has not filled yet leaves the position visible, so the next tick
+    decided to close it again: two closes went out for the same NVDA condor
+    thirty minutes apart and both filled. That one only worked out because the
+    first had partially filled and the second was built from what remained --
+    had the first filled completely, the second would have re-opened the
+    structure inverted, turning a flat book into a short one.
+
+    Entries are guarded the same way in options_executor; this is the exit side
+    of the same rule: acting twice on one decision must not double the trade.
+    """
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+
+    leg_symbols = {str(leg.get("symbol", "")).upper() for leg in group.get("legs", [])}
+    if not leg_symbols:
+        return None
+
+    try:
+        client = get_alpaca_trading_client()
+        open_orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200))
+    except Exception:
+        # Cannot verify. Skipping every close here would leave stops unable to
+        # fire during a broker blip, which is the worse failure: an unclosed
+        # loser costs more than a rare double close.
+        return None
+
+    for order in open_orders:
+        symbols = {str(getattr(order, "symbol", "") or "").upper()}
+        symbols |= {
+            str(getattr(leg, "symbol", "") or "").upper()
+            for leg in (getattr(order, "legs", None) or [])
+        }
+        if symbols & leg_symbols:
+            return str(getattr(order, "id", "")) or "unknown order"
+    return None
+
+
 def close_group(group: Dict[str, Any], dry_run: bool = False) -> Dict[str, Any]:
     """Close every leg of a structure as one order.
 
@@ -283,6 +324,15 @@ def manage_open_positions(
             decision = evaluate_group(group, config, today=today)
 
         if decision["action"] != "close":
+            report["held"].append(decision)
+            continue
+
+        # One decision, one order: a close still working is not a reason to
+        # send another.
+        working = None if dry_run else close_already_working(group)
+        if working:
+            decision["action"] = "hold"
+            decision["reason"] = "close already working (order %s)" % working[:8]
             report["held"].append(decision)
             continue
 

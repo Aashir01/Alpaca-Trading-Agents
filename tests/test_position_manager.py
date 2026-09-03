@@ -289,3 +289,76 @@ class ConfigInvariantTests(unittest.TestCase):
         }
         decision = evaluate_group(group, DEFAULT_CONFIG, today=opened_at)
         self.assertEqual(decision["action"], "hold")
+
+
+class DuplicateCloseTests(unittest.TestCase):
+    """One decision, one order -- on the exit side too.
+
+    The manager reads positions, not orders. A close that had not filled left
+    the position visible, so the next tick closed it again: two closes went out
+    for one NVDA condor thirty minutes apart and both filled. It only worked
+    out because the first had partially filled and the second was built from
+    what remained. Had the first filled completely, the second would have
+    re-opened the structure inverted -- flat book to short book.
+    """
+
+    def _group(self, symbols=("NVDA260911C00215000", "NVDA260911C00217500")):
+        return {
+            "key": "NVDA:2026-09-11",
+            "underlying": "NVDA",
+            "expiry": date(2026, 9, 11),
+            "legs": [{"symbol": s, "qty": 1} for s in symbols],
+            "cost_basis": -800.0,
+            "market_value": -800.0,
+            "unrealized_pl": 0.0,
+        }
+
+    def _check(self, orders):
+        from unittest.mock import patch
+
+        import tradingagents.execution.position_manager as pm
+
+        client = SimpleNamespace(get_orders=lambda _r: orders)
+        with patch.object(pm, "get_alpaca_trading_client", return_value=client):
+            return pm.close_already_working(self._group())
+
+    def test_no_working_order_allows_the_close(self):
+        self.assertIsNone(self._check([]))
+
+    def test_a_working_close_on_the_same_legs_blocks_a_second(self):
+        order = SimpleNamespace(
+            id="a592e5ab-ced8-48b4-9d97-3c547cb7f8c3",
+            symbol=None,
+            legs=[SimpleNamespace(symbol="NVDA260911C00215000"),
+                  SimpleNamespace(symbol="NVDA260911C00217500")],
+        )
+        self.assertEqual(self._check([order]), "a592e5ab-ced8-48b4-9d97-3c547cb7f8c3")
+
+    def test_a_partial_overlap_still_blocks(self):
+        # The real incident: the second order carried only the legs that had
+        # not filled yet. Any overlap is the same position.
+        order = SimpleNamespace(
+            id="5a73dd98", symbol=None,
+            legs=[SimpleNamespace(symbol="NVDA260911C00217500")],
+        )
+        self.assertIsNotNone(self._check([order]))
+
+    def test_an_unrelated_order_does_not_block(self):
+        order = SimpleNamespace(
+            id="other", symbol=None,
+            legs=[SimpleNamespace(symbol="TSLA260911C00360000")],
+        )
+        self.assertIsNone(self._check([order]))
+
+    def test_an_unreachable_broker_does_not_block_the_close(self):
+        # An unclosed loser costs more than a rare double close, so a broker
+        # blip must not disable stops.
+        from unittest.mock import patch
+
+        import tradingagents.execution.position_manager as pm
+
+        def boom():
+            raise RuntimeError("network")
+
+        with patch.object(pm, "get_alpaca_trading_client", side_effect=boom):
+            self.assertIsNone(pm.close_already_working(self._group()))
